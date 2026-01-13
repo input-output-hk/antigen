@@ -1,0 +1,13 @@
+stack.yaml
+.stack-work*/
+.stack-work-local/
+*/dist
+*~
+dist-newstyle/
+cabal.project.local
+stack.yaml.lock
+.ghc.environment.*
+ghcid.txt
+
+.envrc
+.direnv
