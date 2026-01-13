@@ -9,9 +9,16 @@ import Test.QuickCheck (
   Arbitrary (..),
   NonPositive (..),
   Positive (..),
+  choose,
   counterexample,
+  forAll,
+  label,
+  suchThat,
+  vector,
   (.&&.),
-  (===), label, (.||.),
+  (.||.),
+  (=/=),
+  (===),
  )
 
 antiGenPositive :: AntiGen Int
@@ -22,6 +29,12 @@ antiGenTuple = do
   x <- antiGenPositive
   y <- antiGenPositive
   pure (x, y)
+
+antiGenLengthString :: AntiGen (Int, String)
+antiGenLengthString = do
+  l <- choose (0, 5) `sometimes` choose (6, 10)
+  s <- vector l `sometimes` (arbitrary `suchThat` \x -> length x /= l)
+  pure (l, s)
 
 main :: IO ()
 main = hspec $ do
@@ -54,3 +67,10 @@ main = hspec $ do
         pure $
           counterexample ("x = " <> show x <> " is positive") (x <= 0)
             .&&. counterexample ("y = " <> show y <> " is positive") (y <= 0)
+      prop
+        "zapping `antiGenLengthString` either generates invalid Int or a string of invalid length"
+        . forAll (runAntiGen 1 antiGenLengthString)
+        $ \(l, s) ->
+          if l >= 6
+            then length s === l
+            else length s =/= l
