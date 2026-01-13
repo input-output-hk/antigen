@@ -14,7 +14,7 @@ module Test.AntiGen (
   sometimes,
   countDecisionPoints,
   evalToPartial,
-  genZap,
+  runAntiGen,
 ) where
 
 import Control.Monad ((<=<))
@@ -100,5 +100,5 @@ zapNTimes n x
 evalPartial :: PartialGen a -> a
 evalPartial (PartialGen (F m)) = m id continue
 
-genZap :: Int -> AntiGen a -> Gen a
-genZap n = fmap evalPartial <$> zapNTimes n <=< evalToPartial
+runAntiGen :: Int -> AntiGen a -> Gen a
+runAntiGen n = fmap evalPartial <$> zapNTimes n <=< evalToPartial
