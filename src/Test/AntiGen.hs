@@ -23,6 +23,7 @@ import Control.Monad.Free.Class (wrapT)
 import Control.Monad.Trans (MonadTrans (..))
 import Test.QuickCheck (Gen)
 import Test.QuickCheck.GenT (GenT (..), MonadGen (..), runGenT)
+import Control.Applicative (Alternative(some))
 
 data BiGen next where
   BiGen :: Gen t -> Maybe (Gen t) -> (t -> next) -> BiGen next
@@ -65,7 +66,10 @@ evalToPartial (AntiGen (F m)) = runGenT $ m pure $ \(BiGen pos mNeg c) -> do
   value <- liftGen pos
   case mNeg of
     Just neg -> wrapT $ DecisionPoint value pos neg c
-    Nothing -> c value
+    Nothing -> 
+      -- TODO this will not update when an earlier value gets zapped, there 
+      -- should be a node for `always` nodes as well
+      c value
 
 countDecisionPoints :: PartialGen a -> Int
 countDecisionPoints (PartialGen (F m)) = m (const 0) $ succ . continue
@@ -92,6 +96,9 @@ zap p
       go p cutoffDepth
   | otherwise = pure p
 
+-- TODO This should probably zap all the nodes in one go, otherwise we might fix 
+-- some values to a constant value even if they would be affected by some 
+-- changing value in an earlier node
 zapNTimes :: Int -> PartialGen a -> Gen (PartialGen a)
 zapNTimes n x
   | n <= 0 = pure x

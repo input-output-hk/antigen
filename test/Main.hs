@@ -70,7 +70,4 @@ main = hspec $ do
       prop
         "zapping `antiGenLengthString` either generates invalid Int or a string of invalid length"
         . forAll (runAntiGen 1 antiGenLengthString)
-        $ \(l, s) ->
-          if l >= 6
-            then length s === l
-            else length s =/= l
+        $ \(l, s) -> if l >= 6 then length s === l else length s =/= l
