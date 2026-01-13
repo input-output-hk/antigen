@@ -2,10 +2,26 @@
 
 module Main (main) where
 
-import Test.AntiGen (countDecisionPoints, evalToPartial, sometimes)
+import Test.AntiGen (AntiGen, countDecisionPoints, evalToPartial, genZap, sometimes)
 import Test.Hspec (describe, hspec, shouldBe)
 import Test.Hspec.QuickCheck (prop)
-import Test.QuickCheck (Arbitrary (..), NonPositive (..), Positive (..), (.&&.), (===))
+import Test.QuickCheck (
+  Arbitrary (..),
+  NonPositive (..),
+  Positive (..),
+  counterexample,
+  (.&&.),
+  (===),
+ )
+
+antiGenPositive :: AntiGen Int
+antiGenPositive = (getPositive @Int <$> arbitrary) `sometimes` (getNonPositive <$> arbitrary)
+
+antiGenTuple :: AntiGen (Int, Int)
+antiGenTuple = do
+  x <- antiGenPositive
+  y <- antiGenPositive
+  pure (x, y)
 
 main :: IO ()
 main = hspec $ do
@@ -18,9 +34,18 @@ main = hspec $ do
         pure $ countDecisionPoints pt `shouldBe` 0
       prop "single bind has depth of one, right identity holds" $ do
         let
-          g = (getPositive @Int <$> arbitrary) `sometimes` (getNonPositive <$> arbitrary)
-          m = return =<< g
-          m' = g
+          m = return =<< antiGenPositive
         pt <- evalToPartial m
-        pt' <- evalToPartial m'
+        pt' <- evalToPartial antiGenPositive
         pure $ countDecisionPoints pt === countDecisionPoints pt' .&&. countDecisionPoints pt === 1
+      prop "zapping `antiGenPositive` once generates negative examples" $ do
+        x <- genZap 1 antiGenPositive
+        pure $ x <= 0
+      prop "zapping `antiGenPositive` zero times generates a positive example" $ do
+        x <- genZap 0 antiGenPositive
+        pure $ x > 0
+      prop "zapping `antiGenTuple` twice results in two non-positive Ints" $ do
+        (x, y) <- genZap 2 antiGenTuple
+        pure $
+          counterexample ("x = " <> show x <> " is positive") (x <= 0)
+            .&&. counterexample ("y = " <> show y <> " is positive") (y <= 0)
