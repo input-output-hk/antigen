@@ -25,6 +25,7 @@ library
     build-depends:    
       base ^>=4.20.2.0,
       free,
+      mtl,
       QuickCheck,
       quickcheck-transformer,
     hs-source-dirs:   src
@@ -40,4 +41,6 @@ test-suite antigen-test
     main-is:          Main.hs
     build-depends:
         base ^>=4.20.2.0,
-        antigen
+        antigen,
+        hspec,
+        QuickCheck,
