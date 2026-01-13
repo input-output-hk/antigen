@@ -11,7 +11,7 @@ import Test.QuickCheck (
   Positive (..),
   counterexample,
   (.&&.),
-  (===),
+  (===), label, (.||.),
  )
 
 antiGenPositive :: AntiGen Int
@@ -38,12 +38,17 @@ main = hspec $ do
         pt <- evalToPartial m
         pt' <- evalToPartial antiGenPositive
         pure $ countDecisionPoints pt === countDecisionPoints pt' .&&. countDecisionPoints pt === 1
+    describe "genZap" $ do
       prop "zapping `antiGenPositive` once generates negative examples" $ do
         x <- genZap 1 antiGenPositive
         pure $ x <= 0
       prop "zapping `antiGenPositive` zero times generates a positive example" $ do
         x <- genZap 0 antiGenPositive
         pure $ x > 0
+      prop "zapping `antiGenTuple` once results in a single non-positive Int" $ do
+        (x, y) <- genZap 1 antiGenTuple
+        pure $
+          label "x is non-positive" (x <= 0) .||. label "y is non-positive" (y <= 0)
       prop "zapping `antiGenTuple` twice results in two non-positive Ints" $ do
         (x, y) <- genZap 2 antiGenTuple
         pure $

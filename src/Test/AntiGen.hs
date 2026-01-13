@@ -20,6 +20,7 @@ module Test.AntiGen (
 import Control.Monad ((<=<))
 import Control.Monad.Free.Church (F (..), MonadFree (..))
 import Control.Monad.Free.Class (wrapT)
+import Control.Monad.Trans (MonadTrans (..))
 import Test.QuickCheck (Gen)
 import Test.QuickCheck.GenT (GenT (..), MonadGen (..), runGenT)
 
@@ -53,48 +54,50 @@ instance Functor DecisionPoint where
 continue :: DecisionPoint next -> next
 continue DecisionPoint {..} = dpContinuation dpValue
 
-newtype PartialGen t a = PartialGen (F DecisionPoint a)
+newtype PartialGen a = PartialGen (F DecisionPoint a)
   deriving (Functor, Applicative, Monad, MonadFree DecisionPoint)
 
 wrapGenT :: (MonadFree f m, Functor f) => f (GenT m a) -> GenT m a
 wrapGenT m = GenT $ \g s -> wrap $ (\(GenT f) -> f g s) <$> m
 
-evalToPartial :: AntiGen a -> Gen (PartialGen t a)
+evalToPartial :: AntiGen a -> Gen (PartialGen a)
 evalToPartial (AntiGen (F m)) = runGenT $ m pure $ \(BiGen pos mNeg c) -> do
   value <- liftGen pos
   case mNeg of
     Just neg -> wrapT $ DecisionPoint value pos neg c
     Nothing -> c value
 
-countDecisionPoints :: PartialGen t a -> Int
+countDecisionPoints :: PartialGen a -> Int
 countDecisionPoints (PartialGen (F m)) = m (const 0) $ succ . continue
 
-regenerate :: PartialGen t a -> Gen (PartialGen t a)
+regenerate :: PartialGen a -> Gen (PartialGen a)
 regenerate (PartialGen (F m)) = runGenT $ m pure $ \(DecisionPoint {..}) -> do
   value <- liftGen dpPositiveGen
   wrapGenT $ DecisionPoint value dpPositiveGen dpNegativeGen dpContinuation
 
-zap :: PartialGen t a -> Gen (PartialGen t a)
+zap :: PartialGen a -> Gen (PartialGen a)
 zap p
   | let maxDepth = countDecisionPoints p
   , maxDepth > 0 = do
       cutoffDepth <- choose (0, maxDepth - 1)
       let
-        go :: PartialGen t a -> Int -> Gen (PartialGen t a)
+        go :: PartialGen a -> Int -> Gen (PartialGen a)
         go (PartialGen (F m)) 0 = m (pure . pure) $ \DecisionPoint {..} -> do
           regenerate =<< dpContinuation =<< dpNegativeGen
-        go (PartialGen (F m)) d = m (pure . pure) $ \dp -> do
-          c <- continue dp
-          go c (d - 1)
+        go (PartialGen (F m)) d = m (pure . pure) $ \DecisionPoint {..} -> do
+          runGenT . wrapGenT $ DecisionPoint dpValue dpPositiveGen dpNegativeGen $ \x -> do
+            c <- liftGen $ dpContinuation x
+            pg' <- liftGen $ go c (d - 1)
+            lift pg'
       go p cutoffDepth
   | otherwise = pure p
 
-zapNTimes :: Int -> PartialGen t a -> Gen (PartialGen t a)
+zapNTimes :: Int -> PartialGen a -> Gen (PartialGen a)
 zapNTimes n x
   | n <= 0 = pure x
   | otherwise = zapNTimes (n - 1) =<< zap x
 
-evalPartial :: PartialGen t a -> a
+evalPartial :: PartialGen a -> a
 evalPartial (PartialGen (F m)) = m id continue
 
 genZap :: Int -> AntiGen a -> Gen a
