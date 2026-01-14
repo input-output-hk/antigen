@@ -11,9 +11,9 @@
 
 module Test.AntiGen (
   AntiGen,
-  always,
   sometimes,
   runAntiGen,
+  zapAntiGen,
 ) where
 
 import Test.AntiGen.Internal

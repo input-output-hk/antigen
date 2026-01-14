@@ -3,25 +3,29 @@
 module Main (main) where
 
 import Control.Monad (replicateM)
-import Test.AntiGen (AntiGen, always, runAntiGen, sometimes)
-import Test.AntiGen.Internal (evalToPartial, countDecisionPoints)
+import Test.AntiGen (AntiGen, runAntiGen, sometimes, zapAntiGen)
+import Test.AntiGen.Internal (countDecisionPoints, evalToPartial)
 import Test.Hspec (describe, hspec, shouldBe)
 import Test.Hspec.QuickCheck (prop)
 import Test.QuickCheck (
   Arbitrary (..),
+  Gen,
+  NonNegative (..),
   NonPositive (..),
   Positive (..),
   Property,
   Testable (..),
-  choose,
   counterexample,
   forAll,
+  forAllBlind,
   label,
+  oneof,
   suchThat,
   (.&&.),
   (.||.),
-  (===), NonNegative (..),
+  (===), scale,
  )
+import Test.QuickCheck.GenT (MonadGen (..))
 
 antiGenPositive :: AntiGen Int
 antiGenPositive = (getPositive @Int <$> arbitrary) `sometimes` (getNonPositive <$> arbitrary)
@@ -51,7 +55,7 @@ antiGenLengthString = do
 
 antiGenEither :: AntiGen (Either Int [Bool])
 antiGenEither = do
-  genLeft <- always arbitrary
+  genLeft <- liftGen arbitrary
   if genLeft
     then Left <$> antiGenPositive
     else
@@ -66,6 +70,21 @@ noneOf (x : xs) = not x .&&. noneOf xs
 exactlyOne :: [Bool] -> Property
 exactlyOne [] = counterexample "None of the conditions hold" $ property False
 exactlyOne (p : ps) = property $ (p .&&. noneOf ps) .||. (not p .&&. exactlyOne ps)
+
+someGen :: Gen (Gen Int)
+someGen =
+  oneof
+    [ pure <$> arbitrary
+    , do
+        x <- scale (`div` 2) someGen
+        f <- arbitrary
+        pure $ f <$> x
+    , do
+        x <- scale (`div` 4) someGen
+        y <- scale (`div` 4) someGen
+        f <- arbitrary
+        pure $ f <$> x <*> y
+    ]
 
 main :: IO ()
 main = hspec $ do
@@ -83,28 +102,35 @@ main = hspec $ do
         pt' <- evalToPartial antiGenPositive
         pure $ countDecisionPoints pt === countDecisionPoints pt' .&&. countDecisionPoints pt === 1
     describe "runAntiGen" $ do
+      prop "runAntiGen . liftGen == id" $
+        \seed -> forAllBlind someGen $ \g -> do
+          let g' = variant (seed :: Int) $ runAntiGen (liftGen g)
+          res <- variant seed g
+          res' <- variant seed g'
+          pure $ res === res'
+    describe "zapAntiGen" $ do
       prop "zapping `antiGenPositive` once generates negative examples" $ do
-        x <- runAntiGen 1 antiGenPositive
+        x <- zapAntiGen 1 antiGenPositive
         pure $ x <= 0
       prop "zapping `antiGenPositive` zero times generates a positive example" $ do
-        x <- runAntiGen 0 antiGenPositive
+        x <- zapAntiGen 0 antiGenPositive
         pure $ x > 0
       prop "zapping `antiGenTuple` once results in a single non-positive Int" $ do
-        (x, y) <- runAntiGen 1 antiGenTuple
+        (x, y) <- zapAntiGen 1 antiGenTuple
         pure $
           label "x is non-positive" (x <= 0) .||. label "y is non-positive" (y <= 0)
       prop "zapping `antiGenTuple` twice results in two non-positive Ints" $ do
-        (x, y) <- runAntiGen 2 antiGenTuple
+        (x, y) <- zapAntiGen 2 antiGenTuple
         pure $
           counterexample ("x = " <> show x <> " is positive") (x <= 0)
             .&&. counterexample ("y = " <> show y <> " is positive") (y <= 0)
       prop
         "zapping the length of the string propagates to the string generator"
-        . forAll (runAntiGen 1 antiGenLengthStringStatic)
+        . forAll (zapAntiGen 1 antiGenLengthStringStatic)
         $ \(l, s) -> length s === l
       prop
         "zapping `antiGenLengthString` either generates invalid Int or a string of invalid length"
-        . forAll (runAntiGen 1 antiGenLengthString)
+        . forAll (zapAntiGen 1 antiGenLengthString)
         $ \(l, s) ->
           exactlyOne
             [ l > 5
@@ -112,7 +138,7 @@ main = hspec $ do
             ]
       prop
         "zapping `antiGenEither` once gives a nice distribution"
-        . forAll (runAntiGen 1 antiGenEither)
+        . forAll (zapAntiGen 1 antiGenEither)
         $ \x ->
           exactlyOne
             [ case x of

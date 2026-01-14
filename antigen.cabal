@@ -37,7 +37,8 @@ test-suite antigen-test
     hs-source-dirs:   test
     main-is:          Main.hs
     build-depends:
-        base ^>=4.20.2.0,
-        antigen,
-        hspec,
-        QuickCheck,
+      base ^>=4.20.2.0,
+      antigen,
+      hspec,
+      QuickCheck,
+      quickcheck-transformer,

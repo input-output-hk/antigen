@@ -5,14 +5,15 @@
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 module Test.AntiGen.Internal (
   AntiGen,
-  always,
   sometimes,
+  zapAntiGen,
   runAntiGen,
   evalToPartial,
   countDecisionPoints,
@@ -33,10 +34,24 @@ instance Functor BiGen where
   fmap f (BiGen p n c) = BiGen p n $ f . c
 
 newtype AntiGen a = AntiGen (F BiGen a)
-  deriving (Functor, Applicative, Monad)
+  deriving (Functor, Applicative, Monad, MonadFree BiGen)
 
-always :: Gen a -> AntiGen a
-always g = AntiGen $ F $ \p b -> b $ BiGen g Nothing p
+mapGen :: (forall x. Gen x -> Gen x) -> AntiGen a -> AntiGen a
+mapGen f (AntiGen (F m)) = m pure $ \(BiGen pos neg c) ->
+  wrap $ BiGen (f pos) (f <$> neg) c
+
+instance MonadGen AntiGen where
+  liftGen g = AntiGen $ F $ \p b -> b $ BiGen g Nothing p
+  variant n = mapGen (variant n)
+  sized f = AntiGen $ F $ \p b ->
+    let
+      pos = sized $ \sz ->
+        let AntiGen (F m) = f sz
+         in m pure $ \(BiGen ps _ c) -> ps >>= c
+     in
+      b $ BiGen pos Nothing p
+  resize n = mapGen (resize n)
+  choose = liftGen . choose
 
 sometimes :: Gen a -> Gen a -> AntiGen a
 sometimes pos neg = AntiGen $ F $ \p b -> b $ BiGen pos (Just neg) p
@@ -110,5 +125,8 @@ zapNTimes n x
 evalPartial :: PartialGen a -> a
 evalPartial (PartialGen (F m)) = m id continue
 
-runAntiGen :: Int -> AntiGen a -> Gen a
-runAntiGen n = fmap evalPartial <$> zapNTimes n <=< evalToPartial
+zapAntiGen :: Int -> AntiGen a -> Gen a
+zapAntiGen n = fmap evalPartial <$> zapNTimes n <=< evalToPartial
+
+runAntiGen :: AntiGen a -> Gen a
+runAntiGen ag = evalPartial <$> evalToPartial ag
