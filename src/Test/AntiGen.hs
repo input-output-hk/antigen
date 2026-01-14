@@ -16,7 +16,6 @@ module Test.AntiGen (
   countDecisionPoints,
   evalToPartial,
   runAntiGen,
-  showPartialGen,
 ) where
 
 import Control.Monad ((<=<))
@@ -28,7 +27,7 @@ import Test.QuickCheck (Gen)
 import Test.QuickCheck.GenT (GenT (..), MonadGen (..), runGenT)
 
 data BiGen next where
-  BiGen :: Show t => Gen t -> Maybe (Gen t) -> (t -> next) -> BiGen next
+  BiGen :: Gen t -> Maybe (Gen t) -> (t -> next) -> BiGen next
 
 instance Functor BiGen where
   fmap f (BiGen p n c) = BiGen p n $ f . c
@@ -36,15 +35,14 @@ instance Functor BiGen where
 newtype AntiGen a = AntiGen (F BiGen a)
   deriving (Functor, Applicative, Monad)
 
-always :: Show a => Gen a -> AntiGen a
+always :: Gen a -> AntiGen a
 always g = AntiGen $ F $ \p b -> b $ BiGen g Nothing p
 
-sometimes :: Show a => Gen a -> Gen a -> AntiGen a
+sometimes :: Gen a -> Gen a -> AntiGen a
 sometimes pos neg = AntiGen $ F $ \p b -> b $ BiGen pos (Just neg) p
 
 data DecisionPoint next where
   DecisionPoint ::
-    Show t =>
     { dpValue :: t
     , dpPositiveGen :: Gen t
     , dpNegativeGen :: Maybe (Gen t)
@@ -104,7 +102,7 @@ zap p@(PartialGen (F m))
           Nothing -> wrapGenState dp
   | otherwise = pure p
 
-zapNTimes :: Show a => Int -> PartialGen a -> Gen (PartialGen a)
+zapNTimes :: Int -> PartialGen a -> Gen (PartialGen a)
 zapNTimes n x
   | n <= 0 = pure x
   | otherwise = zapNTimes (n - 1) =<< zap x
@@ -112,9 +110,5 @@ zapNTimes n x
 evalPartial :: PartialGen a -> a
 evalPartial (PartialGen (F m)) = m id continue
 
-runAntiGen :: Show a => Int -> AntiGen a -> Gen a
+runAntiGen :: Int -> AntiGen a -> Gen a
 runAntiGen n = fmap evalPartial <$> zapNTimes n <=< evalToPartial
-
-showPartialGen :: Show a => PartialGen a -> String
-showPartialGen (PartialGen (F m)) = m show $ \dp@DecisionPoint {..} ->
-  "Generated value: " <> show dpValue <> "\n" <> continue dp
