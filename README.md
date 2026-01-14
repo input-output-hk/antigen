@@ -7,7 +7,7 @@ AntiGen lets you write `QuickCheck` generators that can also be negated to gener
 ```haskell
 antiGenLengthString :: AntiGen (Int, String)
 antiGenLengthString = do
-  l <- antiGenSmall
+  l <- choose (0, 5) `sometimes` choose (6, 10)
   s <-
     -- Use `sometimes` to provide both a positive and a negative generator
     pure (replicate l 'a') `sometimes` do
