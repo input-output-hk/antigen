@@ -1,6 +1,6 @@
 # AntiGen
 
-AntiGen lets you write `QuickCheck` generators that can also be negated to generate neagtive examples. It can be used as a drop-in replacement for `Gen`.
+AntiGen lets you write `QuickCheck` generators that can also be negated to generate negative examples. It can be used as a drop-in replacement for `Gen`.
 
 ## Example
 
