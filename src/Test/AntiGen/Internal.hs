@@ -12,7 +12,7 @@
 
 module Test.AntiGen.Internal (
   AntiGen,
-  sometimes,
+  (|!),
   zapAntiGen,
   runAntiGen,
   evalToPartial,
@@ -53,8 +53,8 @@ instance MonadGen AntiGen where
   resize n = mapGen (resize n)
   choose = liftGen . choose
 
-sometimes :: Gen a -> Gen a -> AntiGen a
-sometimes pos neg = AntiGen $ F $ \p b -> b $ BiGen pos (Just neg) p
+(|!) :: Gen a -> Gen a -> AntiGen a
+pos |! neg = AntiGen $ F $ \p b -> b $ BiGen pos (Just neg) p
 
 data DecisionPoint next where
   DecisionPoint ::

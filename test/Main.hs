@@ -3,7 +3,7 @@
 module Main (main) where
 
 import Control.Monad (replicateM)
-import Test.AntiGen (AntiGen, runAntiGen, sometimes, zapAntiGen)
+import Test.AntiGen (AntiGen, runAntiGen, (|!), zapAntiGen)
 import Test.AntiGen.Internal (countDecisionPoints, evalToPartial)
 import Test.Hspec (describe, hspec, shouldBe)
 import Test.Hspec.QuickCheck (prop)
@@ -28,7 +28,7 @@ import Test.QuickCheck (
 import Test.QuickCheck.GenT (MonadGen (..))
 
 antiGenPositive :: AntiGen Int
-antiGenPositive = (getPositive @Int <$> arbitrary) `sometimes` (getNonPositive <$> arbitrary)
+antiGenPositive = (getPositive @Int <$> arbitrary) |! (getNonPositive <$> arbitrary)
 
 antiGenTuple :: AntiGen (Int, Int)
 antiGenTuple = do
@@ -37,7 +37,7 @@ antiGenTuple = do
   pure (x, y)
 
 antiGenSmall :: AntiGen Int
-antiGenSmall = choose (0, 5) `sometimes` choose (6, 10)
+antiGenSmall = choose (0, 5) |! choose (6, 10)
 
 antiGenLengthStringStatic :: AntiGen (Int, String)
 antiGenLengthStringStatic = do
@@ -48,7 +48,7 @@ antiGenLengthString :: AntiGen (Int, String)
 antiGenLengthString = do
   l <- antiGenSmall
   s <-
-    pure (replicate l 'a') `sometimes` do
+    pure (replicate l 'a') |! do
       NonNegative l' <- suchThat arbitrary $ \(NonNegative x) -> x /= l
       pure $ replicate l' 'b'
   pure (l, s)
@@ -61,7 +61,7 @@ antiGenEither = do
     else
       Right <$> do
         l <- antiGenSmall
-        replicateM l $ pure True `sometimes` pure False
+        replicateM l $ pure True |! pure False
 
 noneOf :: [Bool] -> Property
 noneOf [] = property True

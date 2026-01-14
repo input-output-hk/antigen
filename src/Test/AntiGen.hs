@@ -11,7 +11,7 @@
 
 module Test.AntiGen (
   AntiGen,
-  sometimes,
+  (|!),
   runAntiGen,
   zapAntiGen,
 ) where
