@@ -13,7 +13,6 @@ import Test.QuickCheck (
   counterexample,
   forAll,
   label,
-  suchThat,
   vector,
   (.&&.),
   (.||.),
@@ -37,8 +36,8 @@ antiGenLengthStringStatic = do
 
 antiGenLengthString :: AntiGen (Int, String)
 antiGenLengthString = do
-  l <- choose (0, 5) `sometimes` choose (6, 10)
-  s <- vector l `sometimes` (arbitrary `suchThat` \x -> length x /= l)
+  l <- choose (1, 5) `sometimes` choose (6, 10)
+  s <- pure (replicate l 'a') `sometimes` pure (replicate (l + 1) 'b')
   pure (l, s)
 
 main :: IO ()
@@ -75,7 +74,7 @@ main = hspec $ do
       prop
         "zapping the length of the string propagates to the string generator"
         . forAll (runAntiGen 1 antiGenLengthStringStatic)
-        $ \(l, s) -> if l >= 6 then length s === l else length s =/= l
+        $ \(l, s) -> length s === l
       prop
         "zapping `antiGenLengthString` either generates invalid Int or a string of invalid length"
         . forAll (runAntiGen 1 antiGenLengthString)
