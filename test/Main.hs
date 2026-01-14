@@ -3,7 +3,8 @@
 module Main (main) where
 
 import Control.Monad (replicateM)
-import Test.AntiGen (AntiGen, always, countDecisionPoints, evalToPartial, runAntiGen, sometimes)
+import Test.AntiGen (AntiGen, always, runAntiGen, sometimes)
+import Test.AntiGen.Internal (evalToPartial, countDecisionPoints)
 import Test.Hspec (describe, hspec, shouldBe)
 import Test.Hspec.QuickCheck (prop)
 import Test.QuickCheck (
