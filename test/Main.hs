@@ -30,6 +30,11 @@ antiGenTuple = do
   y <- antiGenPositive
   pure (x, y)
 
+antiGenLengthStringStatic :: AntiGen (Int, String)
+antiGenLengthStringStatic = do
+  l <- choose (0, 5) `sometimes` choose (6, 10)
+  pure (l, replicate l 'a')
+
 antiGenLengthString :: AntiGen (Int, String)
 antiGenLengthString = do
   l <- choose (0, 5) `sometimes` choose (6, 10)
@@ -67,6 +72,10 @@ main = hspec $ do
         pure $
           counterexample ("x = " <> show x <> " is positive") (x <= 0)
             .&&. counterexample ("y = " <> show y <> " is positive") (y <= 0)
+      prop
+        "zapping the length of the string propagates to the string generator"
+        . forAll (runAntiGen 1 antiGenLengthStringStatic)
+        $ \(l, s) -> if l >= 6 then length s === l else length s =/= l
       prop
         "zapping `antiGenLengthString` either generates invalid Int or a string of invalid length"
         . forAll (runAntiGen 1 antiGenLengthString)
