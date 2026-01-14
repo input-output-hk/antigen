@@ -2,22 +2,24 @@
 
 module Main (main) where
 
-import Test.AntiGen (AntiGen, countDecisionPoints, evalToPartial, runAntiGen, sometimes)
+import Control.Monad (replicateM)
+import Test.AntiGen (AntiGen, always, countDecisionPoints, evalToPartial, runAntiGen, sometimes)
 import Test.Hspec (describe, hspec, shouldBe)
 import Test.Hspec.QuickCheck (prop)
 import Test.QuickCheck (
   Arbitrary (..),
   NonPositive (..),
   Positive (..),
+  Property,
+  Testable (..),
   choose,
   counterexample,
   forAll,
   label,
-  vector,
+  suchThat,
   (.&&.),
   (.||.),
-  (=/=),
-  (===),
+  (===), NonNegative (..),
  )
 
 antiGenPositive :: AntiGen Int
@@ -29,16 +31,40 @@ antiGenTuple = do
   y <- antiGenPositive
   pure (x, y)
 
+antiGenSmall :: AntiGen Int
+antiGenSmall = choose (0, 5) `sometimes` choose (6, 10)
+
 antiGenLengthStringStatic :: AntiGen (Int, String)
 antiGenLengthStringStatic = do
-  l <- choose (0, 5) `sometimes` choose (6, 10)
+  l <- antiGenSmall
   pure (l, replicate l 'a')
 
 antiGenLengthString :: AntiGen (Int, String)
 antiGenLengthString = do
-  l <- choose (1, 5) `sometimes` choose (6, 10)
-  s <- pure (replicate l 'a') `sometimes` pure (replicate (l + 1) 'b')
+  l <- antiGenSmall
+  s <-
+    pure (replicate l 'a') `sometimes` do
+      NonNegative l' <- suchThat arbitrary $ \(NonNegative x) -> x /= l
+      pure $ replicate l' 'b'
   pure (l, s)
+
+antiGenEither :: AntiGen (Either Int [Bool])
+antiGenEither = do
+  genLeft <- always arbitrary
+  if genLeft
+    then Left <$> antiGenPositive
+    else
+      Right <$> do
+        l <- antiGenSmall
+        replicateM l $ pure True `sometimes` pure False
+
+noneOf :: [Bool] -> Property
+noneOf [] = property True
+noneOf (x : xs) = not x .&&. noneOf xs
+
+exactlyOne :: [Bool] -> Property
+exactlyOne [] = counterexample "None of the conditions hold" $ property False
+exactlyOne (p : ps) = property $ (p .&&. noneOf ps) .||. (not p .&&. exactlyOne ps)
 
 main :: IO ()
 main = hspec $ do
@@ -78,4 +104,23 @@ main = hspec $ do
       prop
         "zapping `antiGenLengthString` either generates invalid Int or a string of invalid length"
         . forAll (runAntiGen 1 antiGenLengthString)
-        $ \(l, s) -> if l >= 6 then length s === l else length s =/= l
+        $ \(l, s) ->
+          exactlyOne
+            [ l > 5
+            , length s /= l
+            ]
+      prop
+        "zapping `antiGenEither` once gives a nice distribution"
+        . forAll (runAntiGen 1 antiGenEither)
+        $ \x ->
+          exactlyOne
+            [ case x of
+                Right _ -> False
+                Left v -> v <= 0
+            , case x of
+                Left _ -> False
+                Right v -> length (filter not v) == 1
+            , case x of
+                Left _ -> False
+                Right v -> length v > 5
+            ]
