@@ -13,14 +13,18 @@ antiGenLengthString = do
       NonNegative l' <- suchThat arbitrary $ \(NonNegative x) -> x /= l
       pure $ replicate l' 'b'
   pure (l, s)
+```
 
--- To generate a positive example, use `runAntiGen`
--- > generate (runAntiGen antiGenLengthString)
--- >> (1, "a")
+To generate a positive example, use `runAntiGen`
+```
+ghci> generate (runAntiGen antiGenLengthString)
+(1, "a")
+```
 
--- To generate a negative example, use `zapAntiGen`
--- > generate (zapAntiGen 1 antiGenLengthString)
--- >> (6, "aaaaaa") -- length is too long
--- > generate (zapAntiGen 1 antiGenLengthString)
--- >> (2, "bbbb") -- length of the string does not match up with the integer
+To generate a negative example, use `zapAntiGen`
+```
+ghci> generate (zapAntiGen 1 antiGenLengthString)
+(6, "aaaaaa") -- length is too long
+ghci> generate (zapAntiGen 1 antiGenLengthString)
+(2, "bbbb") -- length of the string does not match up with the integer
 ```
