@@ -8,10 +8,10 @@ AntiGen lets you write `QuickCheck` generators that can also be negated to gener
 -- Returns an integer `n` (such that 0 <= n <= 5) and a string of length `n` consisting only of characters 'a'
 antiGenLengthString :: AntiGen (Int, String)
 antiGenLengthString = do
-  -- Use `sometimes` to provide both a positive and a negative generator
-  l <- choose (0, 5) `sometimes` choose (6, 10)
+  -- Use (|!) to provide both a positive and a negative generator
+  l <- choose (0, 5) |! choose (6, 10)
   s <-
-    pure (replicate l 'a') `sometimes` do
+    pure (replicate l 'a') |! do
       NonNegative l' <- suchThat arbitrary $ \(NonNegative x) -> x /= l
       pure $ replicate l' 'b'
   pure (l, s)
