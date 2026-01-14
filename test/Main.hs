@@ -3,7 +3,7 @@
 module Main (main) where
 
 import Control.Monad (replicateM)
-import Test.AntiGen (AntiGen, runAntiGen, (|!), zapAntiGen)
+import Test.AntiGen (AntiGen, runAntiGen, zapAntiGen, (|!))
 import Test.AntiGen.Internal (countDecisionPoints, evalToPartial)
 import Test.Hspec (describe, hspec, shouldBe)
 import Test.Hspec.QuickCheck (prop)
@@ -20,10 +20,11 @@ import Test.QuickCheck (
   forAllBlind,
   label,
   oneof,
+  scale,
   suchThat,
   (.&&.),
   (.||.),
-  (===), scale,
+  (===),
  )
 import Test.QuickCheck.GenT (MonadGen (..))
 
@@ -67,9 +68,9 @@ noneOf :: [Bool] -> Property
 noneOf [] = property True
 noneOf (x : xs) = not x .&&. noneOf xs
 
-exactlyOne :: [Bool] -> Property
+exactlyOne :: [(String, Bool)] -> Property
 exactlyOne [] = counterexample "None of the conditions hold" $ property False
-exactlyOne (p : ps) = property $ (p .&&. noneOf ps) .||. (not p .&&. exactlyOne ps)
+exactlyOne ((lbl, p) : ps) = label lbl (p .&&. noneOf (snd <$> ps)) .||. (not p .&&. exactlyOne ps)
 
 someGen :: Gen (Gen Int)
 someGen =
@@ -133,21 +134,30 @@ main = hspec $ do
         . forAll (zapAntiGen 1 antiGenLengthString)
         $ \(l, s) ->
           exactlyOne
-            [ l > 5
-            , length s /= l
+            [ ("l > 5", l > 5)
+            , ("length s /= l", length s /= l)
             ]
       prop
         "zapping `antiGenEither` once gives a nice distribution"
         . forAll (zapAntiGen 1 antiGenEither)
         $ \x ->
           exactlyOne
-            [ case x of
-                Right _ -> False
-                Left v -> v <= 0
-            , case x of
-                Left _ -> False
-                Right v -> length (filter not v) == 1
-            , case x of
-                Left _ -> False
-                Right v -> length v > 5
+            [
+              ( "Left v <= 0"
+              , case x of
+                  Right _ -> False
+                  Left v -> v <= 0
+              )
+            ,
+              ( "Right length (filter not v) == 1"
+              , case x of
+                  Left _ -> False
+                  Right v -> length (filter not v) == 1
+              )
+            ,
+              ( "Right length > 5"
+              , case x of
+                  Left _ -> False
+                  Right v -> length v > 5
+              )
             ]
