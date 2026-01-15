@@ -4,7 +4,7 @@ module Main (main) where
 
 import Control.Monad (replicateM)
 import Test.AntiGen (AntiGen, runAntiGen, zapAntiGen, (|!))
-import Test.AntiGen.Internal (countDecisionPoints, evalToPartial)
+import Test.AntiGen.Internal (QC (..), countDecisionPoints, evalToPartial)
 import Test.Hspec (describe, hspec, shouldBe)
 import Test.Hspec.QuickCheck (prop)
 import Test.QuickCheck (
@@ -92,16 +92,14 @@ main = hspec $ do
   describe "AntiGen" $ do
     describe "treeDepth" $ do
       prop "pure has depth of zero" $ do
-        let
-          m = pure ()
-        pt <- evalToPartial m
-        pure $ countDecisionPoints pt `shouldBe` 0
+        ndp <- countDecisionPoints $ evalToPartial @_ @Gen (pure ()) QC
+        pure $ ndp `shouldBe` 0
       prop "single bind has depth of one, right identity holds" $ do
         let
           m = return =<< antiGenPositive
-        pt <- evalToPartial m
-        pt' <- evalToPartial antiGenPositive
-        pure $ countDecisionPoints pt === countDecisionPoints pt' .&&. countDecisionPoints pt === 1
+        pt <- countDecisionPoints $ evalToPartial m QC
+        pt' <- countDecisionPoints $ evalToPartial antiGenPositive QC
+        pure $ pt === pt' .&&. pt === 1
     describe "runAntiGen" $ do
       prop "runAntiGen . liftGen == id" $
         \seed -> forAllBlind someGen $ \g -> do
@@ -112,7 +110,7 @@ main = hspec $ do
     describe "zapAntiGen" $ do
       prop "zapping `antiGenPositive` once generates negative examples" $ do
         x <- zapAntiGen 1 antiGenPositive
-        pure $ x <= 0
+        pure . counterexample ("Generated " <> show x) $ x <= 0
       prop "zapping `antiGenPositive` zero times generates a positive example" $ do
         x <- zapAntiGen 0 antiGenPositive
         pure $ x > 0
