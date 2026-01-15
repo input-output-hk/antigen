@@ -32,16 +32,18 @@ import Control.Monad.Identity (Identity (..))
 import Control.Monad.State.Strict (MonadState (..), evalStateT, modify)
 import Control.Monad.Trans (MonadTrans (..))
 import Control.Monad.Trans.Free.Church (FT (..))
-import System.Random.Stateful (StatefulGen (..), UniformRange (..))
+import System.Random.Stateful (StatefulGen (..), UniformRange (..), runStateGen_)
 import Test.QuickCheck (Gen)
-import Test.QuickCheck.GenT (MonadGen (..))
+import Test.QuickCheck.Gen (Gen (..))
+import Test.QuickCheck.GenT (GenT (..), MonadGen (..), runGenT)
 
 -- TODO remove this StatefulGen instance
 data QC = QC
 
 instance StatefulGen QC Gen where
-  uniformByteArrayM = undefined
-  uniformWord64 = undefined
+  uniformWord64 QC = MkGen (\r _n -> runStateGen_ r uniformWord64)
+  uniformByteArrayM pinned sz QC = 
+    MkGen (\r _n -> runStateGen_ r (uniformByteArrayM pinned sz))
 
 data BiGen g m next where
   BiGen ::
@@ -121,8 +123,13 @@ countDecisionPoints (PartialGenT (FT m)) =
   m (const $ pure 0) $ \r dp@DecisionPoint {..} ->
     pure . maybe id (const succ) dpNegativeGen =<< r (continue dp)
 
-hoistPartialGen :: Applicative m' => PartialGenT g m m' a -> m' (PartialGenT g m m'' a)
-hoistPartialGen (PartialGenT (FT m)) = m (pure . pure) $ \r dp -> r $ continue dp
+hoistPartialGen :: Applicative m' => PartialGenT g m Identity a -> PartialGenT g m m' a
+hoistPartialGen (PartialGenT (FT m)) = runIdentity . m (pure . pure) $ \r DecisionPoint {..} -> do
+  pure . wrap . DecisionPoint dpValue dpPositiveGen dpNegativeGen $ runIdentity . r . dpContinuation
+
+runPartialG :: PartialGenT QC Gen Gen a -> Gen (PartialGenT QC Gen Identity a)
+runPartialG (PartialGenT (FT m)) = m (pure . pure) $ \r DecisionPoint {..} -> runGenT . GenT $ \g sz -> do
+  wrap . DecisionPoint dpValue dpPositiveGen dpNegativeGen $ \x -> unGen (r $ dpContinuation x) g sz
 
 zap ::
   StatefulGen g m =>
@@ -146,15 +153,23 @@ zap p@(PartialGenT (FT m)) g
                     value <- lift . lift $ dpPositiveGen g
                     wrap . DecisionPoint value dpPositiveGen dpNegativeGen $ runIdentity . r . dpContinuation
               Nothing -> pure cont
-  | otherwise = runIdentity $ hoistPartialGen p
+  | otherwise = hoistPartialGen p
+
+zapNTimes :: Int -> PartialGenT QC Gen Identity a -> Gen (PartialGenT QC Gen Identity a)
+zapNTimes n x
+  | n > 0 = zapNTimes (n - 1) =<< runPartialG (zap x QC)
+  | otherwise = pure x
 
 evalPartial :: Monad m' => PartialGenT g m m' a -> m' a
 evalPartial (PartialGenT (FT m)) = m pure $ \r dp -> r $ continue dp
 
 -- | Make a negative case generator which generates at most `n` mistakes
 zapAntiGen :: Int -> AntiGenT QC Gen Identity a -> Gen a
-zapAntiGen n x = evalPartial . (`zap` QC) =<< hoistPartialGen (evalToPartial x QC)
+zapAntiGen n x = do
+  partial <- runPartialG $ evalToPartial x QC
+  zapped <- zapNTimes n partial
+  pure . runIdentity $ evalPartial zapped
 
 -- | Make a positive example generator
 runAntiGen :: AntiGenT QC Gen Identity a -> Gen a
-runAntiGen x = evalPartial =<< hoistPartialGen (evalToPartial x QC)
+runAntiGen = zapAntiGen 0
