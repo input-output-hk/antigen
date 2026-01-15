@@ -118,9 +118,9 @@ zap p@(PartialGen (F m))
   | otherwise = pure p
 
 zapNTimes :: Int -> PartialGen a -> Gen (PartialGen a)
-zapNTimes n x
-  | n <= 0 = pure x
-  | otherwise = zapNTimes (n - 1) =<< zap x
+zapNTimes n
+  | n <= 0 = pure
+  | otherwise = zapNTimes (n - 1) <=< zap
 
 evalPartial :: PartialGen a -> a
 evalPartial (PartialGen (F m)) = m id continue
