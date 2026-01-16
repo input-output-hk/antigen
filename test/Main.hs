@@ -1,14 +1,17 @@
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 
 module Main (main) where
 
 import Control.Monad (replicateM)
+import Data.Data (Proxy (..))
 import Test.AntiGen (AntiGen, runAntiGen, zapAntiGen, (|!))
 import Test.AntiGen.Internal (countDecisionPoints, evalToPartial)
 import Test.Hspec (describe, hspec, shouldBe)
 import Test.Hspec.QuickCheck (prop)
 import Test.QuickCheck (
   Arbitrary (..),
+  CoArbitrary,
   Gen,
   NonNegative (..),
   NonPositive (..),
@@ -70,17 +73,17 @@ exactlyOne :: [(String, Bool)] -> Property
 exactlyOne [] = counterexample "None of the conditions hold" $ property False
 exactlyOne ((lbl, p) : ps) = label lbl (p .&&. noneOf (snd <$> ps)) .||. (not p .&&. exactlyOne ps)
 
-someGen :: Gen (Gen Int)
-someGen =
+someGen :: (Arbitrary a, CoArbitrary a) => Proxy a -> Gen (Gen a)
+someGen p =
   oneof
     [ pure <$> arbitrary
     , do
-        x <- scale (`div` 2) someGen
+        x <- scale (`div` 2) $ someGen p
         f <- arbitrary
         pure $ f <$> x
     , do
-        x <- scale (`div` 4) someGen
-        y <- scale (`div` 4) someGen
+        x <- scale (`div` 4) $ someGen p
+        y <- scale (`div` 4) $ someGen p
         f <- arbitrary
         pure $ f <$> x <*> y
     ]
@@ -90,9 +93,7 @@ main = hspec $ do
   describe "AntiGen" $ do
     describe "treeDepth" $ do
       prop "pure has depth of zero" $ do
-        let
-          m = pure ()
-        pt <- evalToPartial m
+        pt <- evalToPartial $ pure ()
         pure $ countDecisionPoints pt `shouldBe` 0
       prop "single bind has depth of one, right identity holds" $ do
         let
@@ -102,8 +103,8 @@ main = hspec $ do
         pure $ countDecisionPoints pt === countDecisionPoints pt' .&&. countDecisionPoints pt === 1
     describe "runAntiGen" $ do
       prop "runAntiGen . liftGen == id" $
-        \seed -> forAllBlind someGen $ \g -> do
-          let g' = variant (seed :: Int) $ runAntiGen (liftGen g)
+        \(seed :: Int) -> forAllBlind (someGen $ Proxy @Int) $ \g -> do
+          let g' = runAntiGen (liftGen g)
           res <- variant seed g
           res' <- variant seed g'
           pure $ res === res'
