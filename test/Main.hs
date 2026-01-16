@@ -19,14 +19,13 @@ import Test.QuickCheck (
   forAll,
   forAllBlind,
   label,
-  oneof,
   scale,
   suchThat,
   (.&&.),
   (.||.),
   (===),
  )
-import Test.QuickCheck.GenT (MonadGen (..))
+import Test.QuickCheck.GenT (MonadGen (..), oneof)
 
 antiGenPositive :: AntiGen Int
 antiGenPositive = (getPositive @Int <$> arbitrary) |! (getNonPositive <$> arbitrary)
@@ -56,13 +55,12 @@ antiGenLengthString = do
 
 antiGenEither :: AntiGen (Either Int [Bool])
 antiGenEither = do
-  genLeft <- liftGen arbitrary
-  if genLeft
-    then Left <$> antiGenPositive
-    else
-      Right <$> do
+  oneof
+    [ Left <$> antiGenPositive
+    , Right <$> do
         l <- antiGenSmall
         replicateM l $ pure True |! pure False
+    ]
 
 noneOf :: [Bool] -> Property
 noneOf [] = property True
