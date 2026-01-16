@@ -74,13 +74,6 @@ continue DecisionPoint {..} = dpContinuation dpValue
 newtype PartialGen a = PartialGen (F DecisionPoint a)
   deriving (Functor, Applicative, Monad, MonadFree DecisionPoint)
 
-wrapGenState :: (MonadFree f m, Functor f) => f (StateT Int (GenT m) a) -> StateT Int (GenT m) a
-wrapGenState m = StateT $ \s -> GenT $ \g sz ->
-  let eval (StateT x) =
-        let GenT f = x s
-         in f g sz
-   in wrap $ eval <$> m
-
 evalToPartial :: AntiGen a -> Gen (PartialGen a)
 evalToPartial (AntiGen (F m)) = runGenT $ m pure $ \(BiGen pos mNeg c) -> do
   value <- liftGen pos
@@ -96,24 +89,24 @@ zap :: PartialGen a -> Gen (PartialGen a)
 zap p@(PartialGen (F m))
   | let maxDepth = countDecisionPoints p
   , maxDepth > 0 = do
+      let
+        wrapGenState mm = StateT $ \s -> GenT $ \g sz ->
+          let eval (StateT x) =
+                let GenT f = x s
+                 in f g sz
+           in wrap $ eval <$> mm
       cutoffDepth <- choose (0, maxDepth - 1)
       runGenT . (`evalStateT` cutoffDepth) . m pure $ \dp@DecisionPoint {..} ->
         case dpNegativeGen of
           Just neg -> do
             d <- get
             modify pred
-            case compare 0 d of
-              EQ -> do
+            if d == 0
+              then do
                 -- Negate the generator
                 value <- lift $ liftGen neg
                 wrapGenState $ DecisionPoint value neg Nothing dpContinuation
-              LT ->
-                -- Continue
-                wrapGenState dp
-              GT -> do
-                -- Regenerate
-                value <- lift $ liftGen dpPositiveGen
-                wrapGenState $ DecisionPoint value dpPositiveGen dpNegativeGen dpContinuation
+              else wrapGenState dp
           Nothing -> wrapGenState dp
   | otherwise = pure p
 
