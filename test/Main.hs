@@ -54,15 +54,17 @@ antiGenLengthString = do
       pure $ replicate l' 'b'
   pure (l, s)
 
+antiGenBoolList :: AntiGen [Bool]
+antiGenBoolList = do
+  l <- antiGenSmall
+  replicateM l $ pure True |! pure False
+
 antiGenEither :: AntiGen (Either Int [Bool])
 antiGenEither = do
   genLeft <- liftGen arbitrary
   if genLeft
     then Left <$> antiGenPositive
-    else
-      Right <$> do
-        l <- antiGenSmall
-        replicateM l $ pure True |! pure False
+    else Right <$> antiGenBoolList
 
 noneOf :: [Bool] -> Property
 noneOf [] = property True
@@ -136,7 +138,7 @@ main = hspec $ do
             , ("length s /= l", length s /= l)
             ]
       prop
-        "zapping `antiGenEither` once gives a nice distribution"
+        "zapping `antiGenEither` once breaks one of three things"
         . forAll (zapAntiGen 1 antiGenEither)
         $ \x ->
           exactlyOne
@@ -159,3 +161,12 @@ main = hspec $ do
                   Right v -> length v > 5
               )
             ]
+      prop
+        "zapping `antiGenBoolList` twice gives either two false or one false and invalid length"
+        . forAll (zapAntiGen 2 antiGenBoolList)
+        $ \x ->
+          let numFalse = length (filter not x)
+           in exactlyOne
+                [ ("two false", numFalse == 2)
+                , ("invalid length and one false", length x > 5 && numFalse == 1)
+                ]
