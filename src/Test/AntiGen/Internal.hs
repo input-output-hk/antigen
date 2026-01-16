@@ -136,14 +136,11 @@ zap p@(PartialGenT (FT m)) g
               Just negativeGen -> pure $ do
                 d <- get
                 modify pred
-                case compare 0 d of
-                  LT -> cont
-                  EQ -> do
+                if 0 == d
+                  then do
                     value <- lift . lift $ negativeGen g
                     wrap . DecisionPoint value negativeGen Nothing $ runIdentity . r . dpContinuation
-                  GT -> do
-                    value <- lift . lift $ dpPositiveGen g
-                    wrap . DecisionPoint value dpPositiveGen dpNegativeGen $ runIdentity . r . dpContinuation
+                  else cont
               Nothing -> pure cont
   | otherwise = hoistPartialGen p
 
