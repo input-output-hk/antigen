@@ -32,18 +32,10 @@ import Control.Monad.Identity (Identity (..))
 import Control.Monad.State.Strict (MonadState (..), evalStateT, modify)
 import Control.Monad.Trans (MonadTrans (..))
 import Control.Monad.Trans.Free.Church (FT (..))
-import System.Random.Stateful (StatefulGen (..), UniformRange (..), runStateGen_)
-import Test.QuickCheck (Gen)
+import System.Random.Stateful (StatefulGen (..), UniformRange (..))
+import Test.QuickCheck (Gen, QC (..))
 import Test.QuickCheck.Gen (Gen (..))
 import Test.QuickCheck.GenT (GenT (..), MonadGen (..), runGenT)
-
--- TODO remove this StatefulGen instance
-data QC = QC
-
-instance StatefulGen QC Gen where
-  uniformWord64 QC = MkGen (\r _n -> runStateGen_ r uniformWord64)
-  uniformByteArrayM pinned sz QC = 
-    MkGen (\r _n -> runStateGen_ r (uniformByteArrayM pinned sz))
 
 data BiGen g m next where
   BiGen ::
