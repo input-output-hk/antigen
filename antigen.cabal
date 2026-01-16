@@ -25,6 +25,7 @@ library
       base ^>=4.20.2.0,
       free,
       mtl,
+      random,
       QuickCheck,
       quickcheck-transformer,
     hs-source-dirs:   src

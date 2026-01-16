@@ -4,7 +4,7 @@ module Main (main) where
 
 import Control.Monad (replicateM)
 import Test.AntiGen (AntiGen, runAntiGen, zapAntiGen, (|!))
-import Test.AntiGen.Internal (countDecisionPoints, evalToPartial)
+import Test.AntiGen.Internal (QC (..), countDecisionPoints, evalToPartial)
 import Test.Hspec (describe, hspec, shouldBe)
 import Test.Hspec.QuickCheck (prop)
 import Test.QuickCheck (
@@ -28,24 +28,24 @@ import Test.QuickCheck (
  )
 import Test.QuickCheck.GenT (MonadGen (..))
 
-antiGenPositive :: AntiGen Int
+antiGenPositive :: AntiGen QC Gen Int
 antiGenPositive = (getPositive @Int <$> arbitrary) |! (getNonPositive <$> arbitrary)
 
-antiGenTuple :: AntiGen (Int, Int)
+antiGenTuple :: AntiGen QC Gen (Int, Int)
 antiGenTuple = do
   x <- antiGenPositive
   y <- antiGenPositive
   pure (x, y)
 
-antiGenSmall :: AntiGen Int
+antiGenSmall :: AntiGen QC Gen Int
 antiGenSmall = choose (0, 5) |! choose (6, 10)
 
-antiGenLengthStringStatic :: AntiGen (Int, String)
+antiGenLengthStringStatic :: AntiGen QC Gen (Int, String)
 antiGenLengthStringStatic = do
   l <- antiGenSmall
   pure (l, replicate l 'a')
 
-antiGenLengthString :: AntiGen (Int, String)
+antiGenLengthString :: AntiGen QC Gen (Int, String)
 antiGenLengthString = do
   l <- antiGenSmall
   s <-
@@ -54,15 +54,17 @@ antiGenLengthString = do
       pure $ replicate l' 'b'
   pure (l, s)
 
-antiGenEither :: AntiGen (Either Int [Bool])
+antiGenBoolList :: AntiGen QC Gen [Bool]
+antiGenBoolList = do
+  l <- antiGenSmall
+  replicateM l $ pure True |! pure False
+
+antiGenEither :: AntiGen QC Gen (Either Int [Bool])
 antiGenEither = do
   genLeft <- liftGen arbitrary
   if genLeft
     then Left <$> antiGenPositive
-    else
-      Right <$> do
-        l <- antiGenSmall
-        replicateM l $ pure True |! pure False
+    else Right <$> antiGenBoolList
 
 noneOf :: [Bool] -> Property
 noneOf [] = property True
@@ -92,54 +94,52 @@ main = hspec $ do
   describe "AntiGen" $ do
     describe "treeDepth" $ do
       prop "pure has depth of zero" $ do
-        let
-          m = pure ()
-        pt <- evalToPartial m
-        pure $ countDecisionPoints pt `shouldBe` 0
+        ndp <- countDecisionPoints <$> evalToPartial @_ @Gen (pure ()) QC
+        pure $ ndp `shouldBe` 0
       prop "single bind has depth of one, right identity holds" $ do
         let
           m = return =<< antiGenPositive
-        pt <- evalToPartial m
-        pt' <- evalToPartial antiGenPositive
-        pure $ countDecisionPoints pt === countDecisionPoints pt' .&&. countDecisionPoints pt === 1
+        pt <- countDecisionPoints <$> evalToPartial m QC
+        pt' <- countDecisionPoints <$> evalToPartial antiGenPositive QC
+        pure $ pt === pt' .&&. pt === 1
     describe "runAntiGen" $ do
       prop "runAntiGen . liftGen == id" $
         \seed -> forAllBlind someGen $ \g -> do
-          let g' = variant (seed :: Int) $ runAntiGen (liftGen g)
+          let g' = variant (seed :: Int) $ runAntiGen (liftGen g) QC
           res <- variant seed g
           res' <- variant seed g'
           pure $ res === res'
     describe "zapAntiGen" $ do
       prop "zapping `antiGenPositive` once generates negative examples" $ do
         x <- zapAntiGen 1 antiGenPositive
-        pure $ x <= 0
+        pure . counterexample ("Generated " <> show x) $ x <= 0
       prop "zapping `antiGenPositive` zero times generates a positive example" $ do
         x <- zapAntiGen 0 antiGenPositive
         pure $ x > 0
       prop "zapping `antiGenTuple` once results in a single non-positive Int" $ do
-        (x, y) <- zapAntiGen 1 antiGenTuple
+        (x, y) <- zapAntiGen 1 antiGenTuple QC
         pure $
           label "x is non-positive" (x <= 0) .||. label "y is non-positive" (y <= 0)
       prop "zapping `antiGenTuple` twice results in two non-positive Ints" $ do
-        (x, y) <- zapAntiGen 2 antiGenTuple
+        (x, y) <- zapAntiGen 2 antiGenTuple QC
         pure $
           counterexample ("x = " <> show x <> " is positive") (x <= 0)
             .&&. counterexample ("y = " <> show y <> " is positive") (y <= 0)
       prop
         "zapping the length of the string propagates to the string generator"
-        . forAll (zapAntiGen 1 antiGenLengthStringStatic)
+        . forAll (zapAntiGen 1 antiGenLengthStringStatic QC)
         $ \(l, s) -> length s === l
       prop
         "zapping `antiGenLengthString` either generates invalid Int or a string of invalid length"
-        . forAll (zapAntiGen 1 antiGenLengthString)
+        . forAll (zapAntiGen 1 antiGenLengthString QC)
         $ \(l, s) ->
           exactlyOne
             [ ("l > 5", l > 5)
             , ("length s /= l", length s /= l)
             ]
       prop
-        "zapping `antiGenEither` once gives a nice distribution"
-        . forAll (zapAntiGen 1 antiGenEither)
+        "zapping `antiGenEither` once breaks one of three things"
+        . forAll (zapAntiGen 1 antiGenEither QC)
         $ \x ->
           exactlyOne
             [
@@ -161,3 +161,12 @@ main = hspec $ do
                   Right v -> length v > 5
               )
             ]
+      prop
+        "zapping `antiGenBoolList` twice gives either two false or one false and invalid length"
+        . forAll (zapAntiGen 2 antiGenBoolList QC)
+        $ \x ->
+          let numFalse = length (filter not x)
+           in exactlyOne
+                [ ("two false", numFalse == 2)
+                , ("invalid length and one false", length x > 5 && numFalse == 1)
+                ]

@@ -1,132 +1,191 @@
 {-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE ImpredicativeTypes #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 module Test.AntiGen.Internal (
   AntiGen,
+  QC (..),
   (|!),
   zapAntiGen,
   runAntiGen,
   evalToPartial,
   countDecisionPoints,
+  hoistPartialGen,
 ) where
 
+import Control.Applicative (liftA)
 import Control.Monad ((<=<))
-import Control.Monad.Free.Church (F (..), MonadFree (..))
-import Control.Monad.Free.Class (wrapT)
-import Control.Monad.State.Strict (MonadState (..), StateT (..), evalStateT, modify)
-import Control.Monad.Trans (MonadTrans (..))
-import Test.QuickCheck (Gen)
-import Test.QuickCheck.GenT (GenT (..), MonadGen (..), runGenT)
+import Control.Monad.Free (Free (..))
+import Control.Monad.Free.Church (F (..), MonadFree (..), fromF, iter, toF)
+import Control.Monad.Identity (Identity (..))
+import System.Random.Stateful (StatefulGen (..), UniformRange (..))
+import Test.QuickCheck (Gen, QC (..))
+import Test.QuickCheck.GenT (MonadGen (..))
 
-data BiGen next where
-  BiGen :: Gen t -> Maybe (Gen t) -> (t -> next) -> BiGen next
+data BiGen g m next where
+  BiGen ::
+    StatefulGen g m =>
+    { bgPositiveGen :: g -> m t
+    , bgNegativeGen :: Maybe (g -> m t)
+    , bgContinuation :: t -> next
+    } ->
+    BiGen g m next
 
-instance Functor BiGen where
+instance Functor (BiGen g m) where
   fmap f (BiGen p n c) = BiGen p n $ f . c
 
-newtype AntiGen a = AntiGen (F BiGen a)
-  deriving (Functor, Applicative, Monad, MonadFree BiGen)
+newtype AntiGen g m a = AntiGen (F (BiGen g m) a)
+  deriving (Functor, Applicative, Monad)
 
-mapGen :: (forall x. Gen x -> Gen x) -> AntiGen a -> AntiGen a
-mapGen f (AntiGen (F m)) = m pure $ \(BiGen pos neg c) ->
-  wrap $ BiGen (f pos) (f <$> neg) c
+mapGen ::
+  forall g m a.
+  StatefulGen g m =>
+  (forall x. m x -> m x) ->
+  AntiGen g m a ->
+  AntiGen g m a
+mapGen f (AntiGen (F m)) = runIdentity $ m (pure . pure) $ \BiGen {..} ->
+  pure . wrap $
+    BiGen (f . bgPositiveGen) (liftA f <$> bgNegativeGen) $
+      runIdentity . bgContinuation
 
-instance MonadGen AntiGen where
-  liftGen g = AntiGen $ F $ \p b -> b $ BiGen g Nothing p
+instance MonadGen (AntiGen QC Gen) where
+  liftGen g = AntiGen $ F $ \p b -> b $ BiGen (const g) Nothing p
   variant n = mapGen (variant n)
-  sized f = AntiGen $ F $ \p b ->
-    let
-      pos = sized $ \sz ->
-        let AntiGen (F m) = f sz
-         in m pure $ \(BiGen ps _ c) -> ps >>= c
-     in
-      b $ BiGen pos Nothing p
+  sized _f = undefined
   resize n = mapGen (resize n)
   choose = liftGen . choose
 
-(|!) :: Gen a -> Gen a -> AntiGen a
-pos |! neg = AntiGen $ F $ \p b -> b $ BiGen pos (Just neg) p
+deriving newtype instance MonadFree (BiGen g m) (AntiGen g m)
 
-data DecisionPoint next where
+(|!) :: Gen a -> Gen a -> AntiGen QC Gen a
+pos |! neg = AntiGen $ F $ \p b ->
+  b $ BiGen (const pos) (Just $ const neg) p
+
+data DecisionPoint g m next where
   DecisionPoint ::
+    StatefulGen g m =>
     { dpValue :: t
-    , dpPositiveGen :: Gen t
-    , dpNegativeGen :: Maybe (Gen t)
+    , dpPositiveGen :: g -> m t
+    , dpNegativeGen :: Maybe (g -> m t)
     , dpContinuation :: t -> next
     } ->
-    DecisionPoint next
+    DecisionPoint g m next
 
-instance Functor DecisionPoint where
+instance Functor (DecisionPoint g m) where
   fmap f (DecisionPoint v p n c) = DecisionPoint v p n $ f . c
 
-continue :: DecisionPoint next -> next
+instance Foldable (DecisionPoint g m) where
+  foldMap f = f . continue
+
+instance Traversable (DecisionPoint g m) where
+  sequenceA DecisionPoint {..} = DecisionPoint dpValue dpPositiveGen dpNegativeGen . const <$> dpContinuation dpValue
+
+continue :: DecisionPoint g m next -> next
 continue DecisionPoint {..} = dpContinuation dpValue
 
-newtype PartialGen a = PartialGen (F DecisionPoint a)
-  deriving (Functor, Applicative, Monad, MonadFree DecisionPoint)
+newtype PartialGen g m a = PartialGen (F (DecisionPoint g m) a)
+  deriving (Functor, Applicative, Monad)
 
-wrapGenState :: (MonadFree f m, Functor f) => f (StateT Int (GenT m) a) -> StateT Int (GenT m) a
-wrapGenState m = StateT $ \s -> GenT $ \g sz ->
-  let eval (StateT x) =
-        let GenT f = x s
-         in f g sz
-   in wrap $ eval <$> m
+deriving newtype instance MonadFree (DecisionPoint g m) (PartialGen g m)
 
-evalToPartial :: AntiGen a -> Gen (PartialGen a)
-evalToPartial (AntiGen (F m)) = runGenT $ m pure $ \(BiGen pos mNeg c) -> do
-  value <- liftGen pos
-  wrapT $ DecisionPoint value pos mNeg c
+evalToPartial ::
+  ( StatefulGen g m
+  , MonadFree (DecisionPoint g m) m
+  ) =>
+  AntiGen g m a -> g -> m (PartialGen g m a)
+evalToPartial (AntiGen (F m)) g = m (pure . pure) $ \BiGen {..} -> do
+  value <- bgPositiveGen g
+  wrap $ DecisionPoint value bgPositiveGen bgNegativeGen bgContinuation
 
-countDecisionPoints :: PartialGen a -> Int
-countDecisionPoints (PartialGen (F m)) = m (const 0) $ \dp@DecisionPoint {..} ->
-  case dpNegativeGen of
-    Just _ -> succ $ continue dp
-    Nothing -> continue dp
+countDecisionPoints :: PartialGen g m a -> Int
+countDecisionPoints (PartialGen (F m)) =
+  runIdentity . m (const $ pure 0) $ \dp@DecisionPoint {..} ->
+    pure . maybe id (const succ) dpNegativeGen =<< continue dp
 
-zap :: PartialGen a -> Gen (PartialGen a)
-zap p@(PartialGen (F m))
-  | let maxDepth = countDecisionPoints p
-  , maxDepth > 0 = do
-      cutoffDepth <- choose (0, maxDepth - 1)
-      runGenT . (`evalStateT` cutoffDepth) . m pure $ \dp@DecisionPoint {..} ->
-        case dpNegativeGen of
-          Just neg -> do
-            d <- get
-            modify pred
-            case compare 0 d of
-              EQ -> do
-                -- Negate the generator
-                value <- lift $ liftGen neg
-                wrapGenState $ DecisionPoint value neg Nothing dpContinuation
-              LT ->
-                -- Continue
-                wrapGenState dp
-              GT -> do
-                -- Regenerate
-                value <- lift $ liftGen dpPositiveGen
-                wrapGenState $ DecisionPoint value dpPositiveGen dpNegativeGen dpContinuation
-          Nothing -> wrapGenState dp
-  | otherwise = pure p
+hoistPartialGen :: PartialGen g m a -> PartialGen g m a
+hoistPartialGen (PartialGen (F m)) = m pure $ \DecisionPoint {..} -> do
+  wrap . DecisionPoint dpValue dpPositiveGen dpNegativeGen $ dpContinuation
 
-zapNTimes :: Int -> PartialGen a -> Gen (PartialGen a)
-zapNTimes n
-  | n <= 0 = pure
-  | otherwise = zapNTimes (n - 1) <=< zap
+regenerate ::
+  MonadFree (DecisionPoint g m) m =>
+  PartialGen g m a ->
+  g ->
+  m (PartialGen g m a)
+regenerate (PartialGen (F m)) g = m (pure . pure) $ \DecisionPoint {..} -> do
+  value <- dpPositiveGen g
+  wrap $ DecisionPoint value dpPositiveGen dpNegativeGen dpContinuation
 
-evalPartial :: PartialGen a -> a
-evalPartial (PartialGen (F m)) = m id continue
+zapPartial ::
+  forall g m a.
+  ( MonadFree (DecisionPoint g m) m
+  , StatefulGen g m
+  ) =>
+  PartialGen g m a -> g -> m (PartialGen g m a)
+zapPartial pg@(PartialGen f) g = do
+  let nPoints = countDecisionPoints pg
+  breakAt <- uniformRM (0, nPoints - 1) g
+  let
+    go :: forall b. Int -> Free (DecisionPoint g m) b -> m (PartialGen g m b)
+    go _ (Pure x) = pure $ pure x
+    go 0 (Free DecisionPoint {..})
+      | Just negativeGen <- dpNegativeGen = do
+          value <- negativeGen g
+          wrap $
+            DecisionPoint value negativeGen Nothing $
+              (`regenerate` g)
+                <=< pure . PartialGen . toF . dpContinuation
+    go d (Free DecisionPoint {..}) = wrap $
+      DecisionPoint dpValue dpPositiveGen dpNegativeGen $
+        \x -> go (maybe d (const $ pred d) dpNegativeGen) (dpContinuation x)
+  go breakAt $ fromF f
 
-zapAntiGen :: Int -> AntiGen a -> Gen a
-zapAntiGen n = fmap evalPartial <$> zapNTimes n <=< evalToPartial
+evalPartialGen :: PartialGen g m a -> a
+evalPartialGen (PartialGen m) = iter continue m
 
-runAntiGen :: AntiGen a -> Gen a
-runAntiGen ag = evalPartial <$> evalToPartial ag
+zapNTimes ::
+  ( MonadFree (DecisionPoint g m) m
+  , StatefulGen g m
+  ) =>
+  Int -> g -> PartialGen g m a -> m (PartialGen g m a)
+zapNTimes n g x
+  | n > 0 = zapNTimes (n - 1) g =<< zapPartial x g
+  | otherwise = pure x
+
+-- | Make a negative case generator which generates at most `n` mistakes
+zapAntiGen ::
+  ( StatefulGen g m
+  , MonadFree (DecisionPoint g m) m
+  ) =>
+  Int -> AntiGen g m a -> g -> m a
+zapAntiGen n x g = do
+  partial <- evalToPartial x g
+  zapped <- zapNTimes n g partial
+  pure $ evalPartialGen zapped
+
+-- | Make a positive example generator
+runAntiGen ::
+  ( StatefulGen g m
+  , MonadFree (DecisionPoint g m) m
+  ) =>
+  AntiGen g m a -> g -> m a
+runAntiGen = zapAntiGen 0
+
+hoistGen :: StatefulGen g m' => (forall x. m x -> m' x) -> AntiGen g m a -> AntiGen g m' a
+hoistGen f (AntiGen (F m)) = m pure $ \BiGen {..} ->
+  wrap $ BiGen (f <$> bgPositiveGen) (fmap f <$> bgNegativeGen) bgContinuation
+
+runAntiGenQC :: AntiGen QC Gen a -> Gen a
+runAntiGenQC x = undefined

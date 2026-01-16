@@ -1,0 +1,12 @@
+packages:
+  .
+
+source-repository-package
+  type: git
+  location: https://github.com/Soupstraw/quickcheck.git
+  tag: 1763a642fd6b94d91da1f0192995e5c6344b69ac
+
+test-show-details: streaming
+
+program-options
+  ghc-options: -Werror
