@@ -42,3 +42,16 @@ test-suite antigen-test
       hspec,
       QuickCheck,
       quickcheck-transformer,
+
+benchmark bench
+  import: warnings
+  type: exitcode-stdio-1.0
+  main-is: Main.hs
+  hs-source-dirs: bench
+  default-language: Haskell2010
+  build-depends:
+    antigen,
+    base,
+    criterion,
+    QuickCheck,
+    quickcheck-transformer,
