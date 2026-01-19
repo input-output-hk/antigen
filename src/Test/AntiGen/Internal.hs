@@ -16,7 +16,9 @@ module Test.AntiGen.Internal (
   zapAntiGen,
   runAntiGen,
   evalToPartial,
+  evalPartial,
   countDecisionPoints,
+  zapAt,
 ) where
 
 import Control.Monad ((<=<))
@@ -85,29 +87,33 @@ countDecisionPoints (PartialGen (F m)) = m (const 0) $ \dp@DecisionPoint {..} ->
     Just _ -> succ $ continue dp
     Nothing -> continue dp
 
+zapAt :: Int -> PartialGen a -> Gen (PartialGen a)
+zapAt cutoffDepth (PartialGen (F m)) = do
+  let
+    wrapGenState mm = StateT $ \s -> GenT $ \g sz ->
+      let eval (StateT x) =
+            let GenT f = x s
+             in f g sz
+       in wrap $ eval <$> mm
+  runGenT . (`evalStateT` cutoffDepth) . m pure $ \dp@DecisionPoint {..} ->
+    case dpNegativeGen of
+      Just neg -> do
+        d <- get
+        modify pred
+        if d == 0
+          then do
+            -- Negate the generator
+            value <- lift $ liftGen neg
+            wrapGenState $ DecisionPoint value neg Nothing dpContinuation
+          else wrapGenState dp
+      Nothing -> wrapGenState dp
+
 zap :: PartialGen a -> Gen (PartialGen a)
-zap p@(PartialGen (F m))
+zap p
   | let maxDepth = countDecisionPoints p
   , maxDepth > 0 = do
-      let
-        wrapGenState mm = StateT $ \s -> GenT $ \g sz ->
-          let eval (StateT x) =
-                let GenT f = x s
-                 in f g sz
-           in wrap $ eval <$> mm
       cutoffDepth <- choose (0, maxDepth - 1)
-      runGenT . (`evalStateT` cutoffDepth) . m pure $ \dp@DecisionPoint {..} ->
-        case dpNegativeGen of
-          Just neg -> do
-            d <- get
-            modify pred
-            if d == 0
-              then do
-                -- Negate the generator
-                value <- lift $ liftGen neg
-                wrapGenState $ DecisionPoint value neg Nothing dpContinuation
-              else wrapGenState dp
-          Nothing -> wrapGenState dp
+      zapAt cutoffDepth p
   | otherwise = pure p
 
 zapNTimes :: Int -> PartialGen a -> Gen (PartialGen a)
