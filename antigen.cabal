@@ -2,7 +2,11 @@ cabal-version:      3.0
 name:               antigen
 version:            0.1.0.0
 synopsis:           Negatable QuickCheck generators 
--- description:
+description:
+  AntiGen is a library that helps with generating negative examples from a 
+  QuickCheck generator. The `AntiGen` monad is designed to be similar to the
+  `Gen` monad, so that migrating the generators would be as frictionless as 
+  possible.
 license:            MIT
 license-file:       LICENSE
 author:             Joosep Jääger
