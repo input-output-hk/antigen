@@ -4,6 +4,7 @@ stack.yaml
 */dist
 *~
 dist-newstyle/
+dist/
 cabal.project.local
 stack.yaml.lock
 .ghc.environment.*
@@ -11,3 +12,4 @@ ghcid.txt
 
 .envrc
 .direnv
+
