@@ -1,3 +1,9 @@
-benchmarks: True
 packages:
   .
+
+benchmarks: True
+
+test-show-details: streaming
+
+program-options
+  ghc-options: -Werror
