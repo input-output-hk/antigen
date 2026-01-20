@@ -55,6 +55,8 @@ instance MonadGen AntiGen where
   resize n = mapGen (resize n)
   choose = liftGen . choose
 
+-- | Create a negatable generator by providing a positive and a negative 
+-- generator
 (|!) :: Gen a -> Gen a -> AntiGen a
 pos |! neg = AntiGen $ F $ \p b -> b $ BiGen pos (Just neg) p
 
@@ -124,8 +126,14 @@ zapNTimes n
 evalPartial :: PartialGen a -> a
 evalPartial (PartialGen (F m)) = m id continue
 
+-- | Create a negative generator from an `AntiGen` by introducing at most 
+-- `n` mistakes. If there are no negatable generators in the `AntiGen`, it will
+-- return a positive generator. Also if the number of negatable generators in 
+-- the `AntiGen` is lower than `n`, then the number of negations will be less
+-- than `n`.
 zapAntiGen :: Int -> AntiGen a -> Gen a
 zapAntiGen n = fmap evalPartial <$> zapNTimes n <=< evalToPartial
 
+-- | Create a positive generator from the provided `AntiGen`.
 runAntiGen :: AntiGen a -> Gen a
 runAntiGen ag = evalPartial <$> evalToPartial ag
