@@ -10,6 +10,7 @@
   - `antiChoose`
   - `antiChooseBounded`
   - `antiTry`
+  - `antiTryGen`
   - `antiPositive`
   - `antiNonPositive`
   - `antiNegative`

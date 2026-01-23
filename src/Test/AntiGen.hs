@@ -47,7 +47,7 @@ import Test.QuickCheck.GenT (MonadGen (..), frequency, suchThat)
 antiNum :: (Eq a, Num a, Arbitrary a) => a -> AntiGen a
 antiNum n = pure n |! ((n +) . getNonZero <$> arbitrary)
 
--- | Returns the provided `Bool`. If negated, returns the negation of that 
+-- | Returns the provided `Bool`. If negated, returns the negation of that
 -- `Bool`.
 antiBool :: Bool -> AntiGen Bool
 antiBool b = pure b |! pure (not b)
@@ -79,11 +79,18 @@ antiChoose rng@(lo, hi) (boundLo, boundHi) =
 antiChooseBounded :: (Integral a, Random a, Bounded a) => (a, a) -> AntiGen a
 antiChooseBounded rng = antiChoose rng (minBound, maxBound)
 
+-- | Returns the provided value unless negated, in which case it generates an
+-- arbitrary value that is different from the provided value. It uses `suchThat`,
+-- so using it on small types might end up discarding many values.
+antiTry :: (Eq a, Arbitrary a) => a -> AntiGen a
+antiTry a = antiTryGen a arbitrary
+
 -- | Returns the provided value unless negated, in which case it uses the
 -- generator to generate a random value that is different from the provided
--- value.
-antiTry :: Eq a => a -> Gen a -> AntiGen a
-antiTry a gen = pure a |! (gen `suchThat` (/= a))
+-- value. It uses `suchThat`, so using it on small types might end up 
+-- discarding many values.
+antiTryGen :: Eq a => a -> Gen a -> AntiGen a
+antiTryGen a gen = pure a |! (gen `suchThat` (/= a))
 
 -- | Negatable generator for positive numbers
 antiPositive :: (Num a, Ord a, Arbitrary a) => AntiGen a
