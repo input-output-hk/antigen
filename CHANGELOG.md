@@ -2,7 +2,7 @@
 
 ## 0.1.2.0
 
-* Fixed negative generators not working when `scaled` is used
+* Fixed `sized` and `resize` implementations for `AntiGen`
 
 ## 0.1.0.0
 
