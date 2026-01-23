@@ -7,7 +7,7 @@ import Control.Monad (replicateM)
 import Data.Data (Proxy (..))
 import Test.AntiGen (AntiGen, runAntiGen, zapAntiGen, (|!))
 import Test.AntiGen.Internal (countDecisionPoints, evalToPartial)
-import Test.Hspec (describe, hspec, shouldBe)
+import Test.Hspec (Spec, describe, hspec, shouldBe)
 import Test.Hspec.QuickCheck (prop)
 import Test.QuickCheck (
   Arbitrary (..),
@@ -26,7 +26,7 @@ import Test.QuickCheck (
   suchThat,
   (.&&.),
   (.||.),
-  (===),
+  (===), getSize,
  )
 import Test.QuickCheck.GenT (MonadGen (..), oneof)
 
@@ -88,19 +88,77 @@ someGen p =
         pure $ f <$> x <*> y
     ]
 
+zapAntiGenSpec :: Spec
+zapAntiGenSpec =
+  describe "zapAntiGen" $ do
+    prop "zapping `antiGenPositive` once generates negative examples" $ do
+      x <- zapAntiGen 1 antiGenPositive
+      pure $ x <= 0
+    prop "zapping `antiGenPositive` zero times generates a positive example" $ do
+      x <- zapAntiGen 0 antiGenPositive
+      pure $ x > 0
+    prop "zapping `antiGenTuple` once results in a single non-positive Int" $ do
+      (x, y) <- zapAntiGen 1 antiGenTuple
+      pure $
+        label "x is non-positive" (x <= 0) .||. label "y is non-positive" (y <= 0)
+    prop "zapping `antiGenTuple` twice results in two non-positive Ints" $ do
+      (x, y) <- zapAntiGen 2 antiGenTuple
+      pure $
+        counterexample ("x = " <> show x <> " is positive") (x <= 0)
+          .&&. counterexample ("y = " <> show y <> " is positive") (y <= 0)
+    prop
+      "zapping the length of the string propagates to the string generator"
+      . forAll (zapAntiGen 1 antiGenLengthStringStatic)
+      $ \(l, s) -> length s === l
+    prop
+      "zapping `antiGenLengthString` either generates invalid Int or a string of invalid length"
+      . forAll (zapAntiGen 1 antiGenLengthString)
+      $ \(l, s) ->
+        exactlyOne
+          [ ("l > 5", l > 5)
+          , ("length s /= l", length s /= l)
+          ]
+    prop
+      "zapping `antiGenEither` once gives a nice distribution"
+      . forAll (zapAntiGen 1 antiGenEither)
+      $ \x ->
+        exactlyOne
+          [
+            ( "Left v <= 0"
+            , case x of
+                Right _ -> False
+                Left v -> v <= 0
+            )
+          ,
+            ( "Right length (filter not v) == 1"
+            , case x of
+                Left _ -> False
+                Right v -> length (filter not v) == 1
+            )
+          ,
+            ( "Right length > 5"
+            , case x of
+                Left _ -> False
+                Right v -> length v > 5
+            )
+          ]
+
 main :: IO ()
 main = hspec $ do
   describe "AntiGen" $ do
     describe "treeDepth" $ do
       prop "pure has depth of zero" $ do
         pt <- evalToPartial $ pure ()
-        pure $ countDecisionPoints pt `shouldBe` 0
+        sz <- getSize
+        pure $ countDecisionPoints sz pt `shouldBe` 0
       prop "single bind has depth of one, right identity holds" $ do
         let
           m = return =<< antiGenPositive
         pt <- evalToPartial m
         pt' <- evalToPartial antiGenPositive
-        pure $ countDecisionPoints pt === countDecisionPoints pt' .&&. countDecisionPoints pt === 1
+        sz <- getSize
+        pure $ countDecisionPoints sz pt === countDecisionPoints sz pt' .&&. countDecisionPoints sz pt === 1
+    zapAntiGenSpec
     describe "runAntiGen" $ do
       prop "runAntiGen . liftGen == id" $
         \(seed :: Int) -> forAllBlind (someGen $ Proxy @Int) $ \g -> do
@@ -108,55 +166,7 @@ main = hspec $ do
           res <- variant seed g
           res' <- variant seed g'
           pure $ res === res'
-    describe "zapAntiGen" $ do
-      prop "zapping `antiGenPositive` once generates negative examples" $ do
-        x <- zapAntiGen 1 antiGenPositive
-        pure $ x <= 0
-      prop "zapping `antiGenPositive` zero times generates a positive example" $ do
-        x <- zapAntiGen 0 antiGenPositive
-        pure $ x > 0
-      prop "zapping `antiGenTuple` once results in a single non-positive Int" $ do
-        (x, y) <- zapAntiGen 1 antiGenTuple
-        pure $
-          label "x is non-positive" (x <= 0) .||. label "y is non-positive" (y <= 0)
-      prop "zapping `antiGenTuple` twice results in two non-positive Ints" $ do
-        (x, y) <- zapAntiGen 2 antiGenTuple
-        pure $
-          counterexample ("x = " <> show x <> " is positive") (x <= 0)
-            .&&. counterexample ("y = " <> show y <> " is positive") (y <= 0)
-      prop
-        "zapping the length of the string propagates to the string generator"
-        . forAll (zapAntiGen 1 antiGenLengthStringStatic)
-        $ \(l, s) -> length s === l
-      prop
-        "zapping `antiGenLengthString` either generates invalid Int or a string of invalid length"
-        . forAll (zapAntiGen 1 antiGenLengthString)
-        $ \(l, s) ->
-          exactlyOne
-            [ ("l > 5", l > 5)
-            , ("length s /= l", length s /= l)
-            ]
-      prop
-        "zapping `antiGenEither` once gives a nice distribution"
-        . forAll (zapAntiGen 1 antiGenEither)
-        $ \x ->
-          exactlyOne
-            [
-              ( "Left v <= 0"
-              , case x of
-                  Right _ -> False
-                  Left v -> v <= 0
-              )
-            ,
-              ( "Right length (filter not v) == 1"
-              , case x of
-                  Left _ -> False
-                  Right v -> length (filter not v) == 1
-              )
-            ,
-              ( "Right length > 5"
-              , case x of
-                  Left _ -> False
-                  Right v -> length v > 5
-              )
-            ]
+    describe "MonadGen" $ do
+      prop "applying `sized` to a negatable generator preserves negation" $ do
+        val <- zapAntiGen 1 . resize 30 . sized $ \sz -> pure sz |! pure (-sz)
+        pure $ val === -30
