@@ -26,7 +26,7 @@ import Control.Monad.Free.Church (F (..), MonadFree (..))
 import Control.Monad.Free.Class (wrapT)
 import Control.Monad.State.Strict (MonadState (..), StateT (..), evalStateT, modify)
 import Control.Monad.Trans (MonadTrans (..))
-import Test.QuickCheck (Gen)
+import Test.QuickCheck (Gen, getSize)
 import Test.QuickCheck.GenT (GenT (..), MonadGen (..), runGenT)
 
 data BiGen next where
@@ -45,17 +45,11 @@ mapGen f (AntiGen (F m)) = m pure $ \(BiGen pos neg c) ->
 instance MonadGen AntiGen where
   liftGen g = AntiGen $ F $ \p b -> b $ BiGen g Nothing p
   variant n = mapGen (variant n)
-  sized f = AntiGen $ F $ \p b ->
-    let
-      pos = sized $ \sz ->
-        let AntiGen (F m) = f sz
-         in m pure $ \(BiGen ps _ c) -> ps >>= c
-     in
-      b $ BiGen pos Nothing p
-  resize n = mapGen (resize n)
+  sized f = wrap $ BiGen (f <$> getSize) Nothing id
+  resize n m = mapGen (resize n) m
   choose = liftGen . choose
 
--- | Create a negatable generator by providing a positive and a negative 
+-- | Create a negatable generator by providing a positive and a negative
 -- generator
 (|!) :: Gen a -> Gen a -> AntiGen a
 pos |! neg = AntiGen $ F $ \p b -> b $ BiGen pos (Just neg) p
@@ -126,9 +120,9 @@ zapNTimes n
 evalPartial :: PartialGen a -> a
 evalPartial (PartialGen (F m)) = m id continue
 
--- | Create a negative generator from an `AntiGen` by introducing at most 
+-- | Create a negative generator from an `AntiGen` by introducing at most
 -- `n` mistakes. If there are no negatable generators in the `AntiGen`, it will
--- return a positive generator. Also if the number of negatable generators in 
+-- return a positive generator. Also if the number of negatable generators in
 -- the `AntiGen` is lower than `n`, then the number of negations will be less
 -- than `n`.
 zapAntiGen :: Int -> AntiGen a -> Gen a
