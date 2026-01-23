@@ -17,11 +17,12 @@ module Test.AntiGen (
   zapAntiGen,
 
   -- * AntiGen combinators
-  antiNum,
-  antiBool,
+  fickleNum,
+  fickleBool,
+  fickleTry,
+  fickleTryGen,
   antiChoose,
   antiChooseBounded,
-  antiTry,
   antiPositive,
   antiNonPositive,
   antiNegative,
@@ -44,13 +45,13 @@ import Test.QuickCheck.GenT (MonadGen (..), frequency, suchThat)
 
 -- | Returns the provided number. If negated, returns a value that is not equal
 -- to the provided number.
-antiNum :: (Eq a, Num a, Arbitrary a) => a -> AntiGen a
-antiNum n = pure n |! ((n +) . getNonZero <$> arbitrary)
+fickleNum :: (Eq a, Num a, Arbitrary a) => a -> AntiGen a
+fickleNum n = pure n |! ((n +) . getNonZero <$> arbitrary)
 
 -- | Returns the provided `Bool`. If negated, returns the negation of that
 -- `Bool`.
-antiBool :: Bool -> AntiGen Bool
-antiBool b = pure b |! pure (not b)
+fickleBool :: Bool -> AntiGen Bool
+fickleBool b = pure b |! pure (not b)
 
 -- | In the positive case generates a value from the first range. In the
 -- negative case generates a value from the second range excluding the first
@@ -82,15 +83,15 @@ antiChooseBounded rng = antiChoose rng (minBound, maxBound)
 -- | Returns the provided value unless negated, in which case it generates an
 -- arbitrary value that is different from the provided value. It uses `suchThat`,
 -- so using it on small types might end up discarding many values.
-antiTry :: (Eq a, Arbitrary a) => a -> AntiGen a
-antiTry a = antiTryGen a arbitrary
+fickleTry :: (Eq a, Arbitrary a) => a -> AntiGen a
+fickleTry a = fickleTryGen a arbitrary
 
 -- | Returns the provided value unless negated, in which case it uses the
 -- generator to generate a random value that is different from the provided
 -- value. It uses `suchThat`, so using it on small types might end up 
 -- discarding many values.
-antiTryGen :: Eq a => a -> Gen a -> AntiGen a
-antiTryGen a gen = pure a |! (gen `suchThat` (/= a))
+fickleTryGen :: Eq a => a -> Gen a -> AntiGen a
+fickleTryGen a gen = pure a |! (gen `suchThat` (/= a))
 
 -- | Negatable generator for positive numbers
 antiPositive :: (Num a, Ord a, Arbitrary a) => AntiGen a
