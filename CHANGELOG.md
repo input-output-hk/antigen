@@ -3,6 +3,17 @@
 ## 0.1.2.0
 
 * Fixed `sized` and `resize` implementations for `AntiGen`
+* Added utility functions:
+  - `(||!)`
+  - `antiNum`
+  - `antiBool`
+  - `antiChoose`
+  - `antiChooseBounded`
+  - `antiTry`
+  - `antiPositive`
+  - `antiNonPositive`
+  - `antiNegative`
+  - `antiNonNegative`
 
 ## 0.1.0.0
 
