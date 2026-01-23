@@ -1,5 +1,9 @@
 # Revision history for antigen
 
+## 0.1.3.0
+
+* Rename `antiNum` and `antiBool` to `fickleNum` and `fickleBool`
+
 ## 0.1.2.0
 
 * Fixed `sized` and `resize` implementations for `AntiGen`

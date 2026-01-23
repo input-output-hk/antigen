@@ -17,8 +17,8 @@ module Test.AntiGen (
   zapAntiGen,
 
   -- * AntiGen combinators
-  antiNum,
-  antiBool,
+  fickleNum,
+  fickleBool,
   antiChoose,
   antiChooseBounded,
   antiTry,
@@ -44,13 +44,13 @@ import Test.QuickCheck.GenT (MonadGen (..), frequency, suchThat)
 
 -- | Returns the provided number. If negated, returns a value that is not equal
 -- to the provided number.
-antiNum :: (Eq a, Num a, Arbitrary a) => a -> AntiGen a
-antiNum n = pure n |! ((n +) . getNonZero <$> arbitrary)
+fickleNum :: (Eq a, Num a, Arbitrary a) => a -> AntiGen a
+fickleNum n = pure n |! ((n +) . getNonZero <$> arbitrary)
 
 -- | Returns the provided `Bool`. If negated, returns the negation of that
 -- `Bool`.
-antiBool :: Bool -> AntiGen Bool
-antiBool b = pure b |! pure (not b)
+fickleBool :: Bool -> AntiGen Bool
+fickleBool b = pure b |! pure (not b)
 
 -- | In the positive case generates a value from the first range. In the
 -- negative case generates a value from the second range excluding the first
