@@ -72,8 +72,8 @@ antiChoose rng@(lo, hi) (boundLo, boundHi) =
           ]
       )
   where
-    rngLo = (boundLo, lo)
-    rngHi = (hi, boundHi)
+    rngLo = (boundLo, pred lo)
+    rngHi = (succ hi, boundHi)
 
 -- | Generates a value from the range. If negated, returns a random value
 -- outside the range between `minBound` and `maxBound`.
