@@ -21,12 +21,14 @@ import Test.QuickCheck (
   counterexample,
   forAll,
   forAllBlind,
+  getSize,
   label,
   scale,
   suchThat,
+  vector,
   (.&&.),
   (.||.),
-  (===), getSize,
+  (===),
  )
 import Test.QuickCheck.GenT (MonadGen (..), oneof)
 
@@ -149,15 +151,13 @@ main = hspec $ do
     describe "treeDepth" $ do
       prop "pure has depth of zero" $ do
         pt <- evalToPartial $ pure ()
-        sz <- getSize
-        pure $ countDecisionPoints sz pt `shouldBe` 0
+        pure $ countDecisionPoints pt `shouldBe` 0
       prop "single bind has depth of one, right identity holds" $ do
         let
           m = return =<< antiGenPositive
         pt <- evalToPartial m
         pt' <- evalToPartial antiGenPositive
-        sz <- getSize
-        pure $ countDecisionPoints sz pt === countDecisionPoints sz pt' .&&. countDecisionPoints sz pt === 1
+        pure $ countDecisionPoints pt === countDecisionPoints pt' .&&. countDecisionPoints pt === 1
     zapAntiGenSpec
     describe "runAntiGen" $ do
       prop "runAntiGen . liftGen == id" $
@@ -168,5 +168,11 @@ main = hspec $ do
           pure $ res === res'
     describe "MonadGen" $ do
       prop "applying `sized` to a negatable generator preserves negation" $ do
-        val <- zapAntiGen 1 . resize 30 . sized $ \sz -> pure sz |! pure (-sz)
-        pure $ val === -30
+        size <- getSize
+        val <- zapAntiGen 1 . sized $ \sz -> pure sz |! pure (-sz)
+        pure $ val === -size
+      prop "`resize` has an effect when zapping" $ do
+        sz <- choose (0, 10)
+        val :: [Bool] <- zapAntiGen 1 . resize sz . sized $ \s ->
+          liftGen (vector $ 2 * s) |! liftGen (vector s)
+        pure $ length val === sz
