@@ -5,7 +5,20 @@ module Main (main) where
 
 import Control.Monad (replicateM)
 import Data.Data (Proxy (..))
-import Test.AntiGen (AntiGen, runAntiGen, zapAntiGen, (|!))
+import Test.AntiGen (
+  AntiGen,
+  antiNegative,
+  antiNonNegative,
+  antiNonPositive,
+  antiPositive,
+  fickleBool,
+  fickleNum,
+  fickleTry,
+  runAntiGen,
+  zapAntiGen,
+  (|!),
+  (||!),
+ )
 import Test.AntiGen.Internal (countDecisionPoints, evalToPartial)
 import Test.Hspec (Spec, describe, hspec, shouldBe)
 import Test.Hspec.QuickCheck (prop)
@@ -28,9 +41,10 @@ import Test.QuickCheck (
   vector,
   (.&&.),
   (.||.),
+  (=/=),
   (===),
  )
-import Test.QuickCheck.GenT (MonadGen (..), oneof)
+import Test.QuickCheck.GenT (MonadGen (..), listOf1, oneof)
 
 antiGenPositive :: AntiGen Int
 antiGenPositive = (getPositive @Int <$> arbitrary) |! (getNonPositive <$> arbitrary)
@@ -145,6 +159,57 @@ zapAntiGenSpec =
             )
           ]
 
+utilsSpec :: Spec
+utilsSpec =
+  describe "utils" $ do
+    describe "fickleNum" $ do
+      prop "positive" $ \(n :: Int) -> do
+        res <- runAntiGen $ fickleNum n
+        pure $ res === n
+      prop "negative" $ \(n :: Int) -> do
+        res <- zapAntiGen 1 $ fickleNum n
+        pure $ res =/= n
+    describe "fickleBool" $ do
+      prop "positive" $ \b -> do
+        res <- runAntiGen $ fickleBool b
+        pure $ res === b
+      prop "negative" $ \b -> do
+        res <- zapAntiGen 1 $ fickleBool b
+        pure $ res =/= b
+    describe "fickleTry" $ do
+      describe "String" $ do
+        prop "positive" $ \(s :: String) -> do
+          res <- runAntiGen $ fickleTry s
+          pure $ res === s
+        prop "negative" $ \(s :: String) -> do
+          res <- zapAntiGen 1 $ fickleTry s
+          pure $ res =/= s
+    describe "antiPositive" $ do
+      prop "positive" . forAll (runAntiGen $ antiPositive @Int) $ (> 0)
+      prop "negative" . forAll (zapAntiGen 1 $ antiPositive @Int) $ (<= 0)
+    describe "antiNegative" $ do
+      prop "positive" . forAll (runAntiGen $ antiNegative @Int) $ (< 0)
+      prop "negative" . forAll (zapAntiGen 1 $ antiNegative @Int) $ (>= 0)
+    describe "antiNonPositive" $ do
+      prop "positive" . forAll (runAntiGen $ antiNonPositive @Int) $ (<= 0)
+      prop "negative" . forAll (zapAntiGen 1 $ antiNonPositive @Int) $ (> 0)
+    describe "antiNonNegative" $ do
+      prop "positive" . forAll (runAntiGen $ antiNonNegative @Int) $ (>= 0)
+      prop "negative" . forAll (zapAntiGen 1 $ antiNonNegative @Int) $ (< 0)
+    describe "(||!)" $ do
+      prop "positive" $ do
+        res <- runAntiGen $ listOf1 (antiPositive @Int) ||! pure []
+        pure $
+          counterexample "is empty" (not $ null res)
+            .&&. counterexample "non-positive" (null $ filter (<= 0) res)
+      prop "negative" $ do
+        res <- zapAntiGen 1 $ listOf1 (antiPositive @Int) ||! pure []
+        pure $
+          exactlyOne
+            [ ("null", null res)
+            , ("nonpositive", length (filter (<= 0) res) == 1)
+            ]
+
 main :: IO ()
 main = hspec $ do
   describe "AntiGen" $ do
@@ -176,3 +241,13 @@ main = hspec $ do
         val :: [Bool] <- zapAntiGen 1 . resize sz . sized $ \s ->
           liftGen (vector $ 2 * s) |! liftGen (vector s)
         pure $ length val === sz
+      prop "nested `resize` works correctly" $ do
+        x <- resize 30 $ do
+          a <- getSize
+          b <- scale (+ 1) $ do
+            c <- getSize
+            d <- scale (+ 1) getSize
+            pure [c, d]
+          pure $ a : b
+        pure $ x === [30, 31, 32]
+    utilsSpec
