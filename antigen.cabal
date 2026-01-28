@@ -1,12 +1,14 @@
 cabal-version:      3.0
 name:               antigen
 version:            0.2.0.0
-synopsis:           Negatable QuickCheck generators 
+synopsis:           Fault injection for QuickCheck
 description:
-  AntiGen is a library that helps with generating negative examples from a 
-  QuickCheck generator. The `AntiGen` monad is designed to be similar to the
-  `Gen` monad, so that migrating the generators would be as frictionless as 
-  possible.
+  AntiGen extends QuickCheck to allow injecting random faults into QuickCheck 
+  generators.
+  .
+  It introduces the `AntiGen` monad, a drop-in replacement for `Gen` that allows 
+  developers to define negative generators alongside their standard 
+  positive generators.
 license:            MIT
 license-file:       LICENSE
 author:             IOG Ledger Team
@@ -14,7 +16,8 @@ maintainer:         hackage@iohk.io
 copyright:          2026 Input Output Global Inc (IOG)
 category:           Testing
 build-type:         Simple
-extra-doc-files:    CHANGELOG.md
+extra-doc-files:    CHANGELOG.md, README.md
+tested-with:        GHC == 9.10.3
 
 source-repository head
   type: git
@@ -45,7 +48,7 @@ test-suite antigen-test
     hs-source-dirs:   test
     main-is:          Main.hs
     build-depends:
-      base ^>=4.20.2.0,
+      base,
       antigen,
       hspec,
       QuickCheck,
