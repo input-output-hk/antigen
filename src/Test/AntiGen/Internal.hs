@@ -24,7 +24,7 @@ module Test.AntiGen.Internal (
 import Control.Monad ((<=<))
 import Control.Monad.Free.Church (F (..), MonadFree (..))
 import Control.Monad.Free.Class (wrapT)
-import Control.Monad.State.Strict (MonadState (..), StateT (..), evalStateT, modify)
+import Control.Monad.State.Strict (MonadState (..), StateT (..), evalStateT, modify')
 import Control.Monad.Trans (MonadTrans (..))
 import Test.QuickCheck (Gen, getSize)
 import Test.QuickCheck.GenT (GenT (..), MonadGen (..), runGenT)
@@ -95,7 +95,7 @@ zapAt cutoffDepth (PartialGen (F m)) = do
     case dpNegativeGen of
       Just neg -> do
         d <- get
-        modify pred
+        modify' pred
         if d == 0
           then do
             -- Negate the generator
