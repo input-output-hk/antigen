@@ -3,6 +3,7 @@
 ## 0.3.0.0
 
 * Rename `fickle*` to `faulty*`
+* Add `antiJust`, `antiNonEmpty`, `antiDistinctPair`
 
 ## 0.2.0.0
 
