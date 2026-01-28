@@ -1,6 +1,10 @@
 # Revision history for antigen
 
-## 0.1.3.0
+## 0.3.0.0
+
+* Rename `fickle*` to `faulty*`
+
+## 0.2.0.0
 
 * Rename `antiNum` and `antiBool` to `fickleNum` and `fickleBool`
 * Rename `antiTry` and `antiTryGen` to `fickleTry` and `fickleTryGen`

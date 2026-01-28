@@ -11,9 +11,9 @@ import Test.AntiGen (
   antiNonNegative,
   antiNonPositive,
   antiPositive,
-  fickleBool,
-  fickleNum,
-  fickleTry,
+  faultyBool,
+  faultyNum,
+  faultyTry,
   runAntiGen,
   zapAntiGen,
   (|!),
@@ -162,27 +162,27 @@ zapAntiGenSpec =
 utilsSpec :: Spec
 utilsSpec =
   describe "utils" $ do
-    describe "fickleNum" $ do
+    describe "faultyNum" $ do
       prop "positive" $ \(n :: Int) -> do
-        res <- runAntiGen $ fickleNum n
+        res <- runAntiGen $ faultyNum n
         pure $ res === n
       prop "negative" $ \(n :: Int) -> do
-        res <- zapAntiGen 1 $ fickleNum n
+        res <- zapAntiGen 1 $ faultyNum n
         pure $ res =/= n
-    describe "fickleBool" $ do
+    describe "faultyBool" $ do
       prop "positive" $ \b -> do
-        res <- runAntiGen $ fickleBool b
+        res <- runAntiGen $ faultyBool b
         pure $ res === b
       prop "negative" $ \b -> do
-        res <- zapAntiGen 1 $ fickleBool b
+        res <- zapAntiGen 1 $ faultyBool b
         pure $ res =/= b
-    describe "fickleTry" $ do
+    describe "faultyTry" $ do
       describe "String" $ do
         prop "positive" $ \(s :: String) -> do
-          res <- runAntiGen $ fickleTry s
+          res <- runAntiGen $ faultyTry s
           pure $ res === s
         prop "negative" $ \(s :: String) -> do
-          res <- zapAntiGen 1 $ fickleTry s
+          res <- zapAntiGen 1 $ faultyTry s
           pure $ res =/= s
     describe "antiPositive" $ do
       prop "positive" . forAll (runAntiGen $ antiPositive @Int) $ (> 0)
