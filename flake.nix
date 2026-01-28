@@ -22,6 +22,7 @@
             haskell.ghc
             haskell.haskell-language-server
             haskell.fourmolu
+            haskell.stack
           ];
         };
       }
