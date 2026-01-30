@@ -5,7 +5,6 @@ synopsis:           Fault injection for QuickCheck
 description:
   AntiGen extends QuickCheck to allow injecting random faults into QuickCheck 
   generators.
-  .
   It introduces the `AntiGen` monad, a drop-in replacement for `Gen` that allows 
   developers to define negative generators alongside their standard 
   positive generators.
