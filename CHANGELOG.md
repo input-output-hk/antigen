@@ -1,5 +1,9 @@
 # Revision history for antigen
 
+## 0.3.1.0
+
+* Add `tryZapAntiGen`
+
 ## 0.3.0.0
 
 * Rename `fickle*` to `faulty*`

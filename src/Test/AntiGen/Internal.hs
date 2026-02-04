@@ -14,6 +14,7 @@ module Test.AntiGen.Internal (
   AntiGen,
   (|!),
   zapAntiGen,
+  tryZapAntiGen,
   runAntiGen,
   evalToPartial,
   evalPartial,
@@ -127,6 +128,15 @@ evalPartial (PartialGen (F m)) = m id continue
 -- than `n`.
 zapAntiGen :: Int -> AntiGen a -> Gen a
 zapAntiGen n = fmap evalPartial <$> zapNTimes n <=< evalToPartial
+
+-- | Create a negative generator from an `AntiGen` by introducing at most
+-- `n` mistakes. If there are no decision points, it will return `Nothing`. 
+tryZapAntiGen :: Int -> AntiGen a -> Gen (Maybe a)
+tryZapAntiGen n ag = do
+  p <- evalToPartial ag
+  if countDecisionPoints p > 0
+    then Just . evalPartial <$> zapNTimes n p
+    else pure Nothing
 
 -- | Create a positive generator from the provided `AntiGen`.
 runAntiGen :: AntiGen a -> Gen a

@@ -15,6 +15,7 @@ module Test.AntiGen (
   (||!),
   runAntiGen,
   zapAntiGen,
+  tryZapAntiGen,
 
   -- * AntiGen combinators
   faultyNum,
