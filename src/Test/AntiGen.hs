@@ -44,7 +44,7 @@ import Test.QuickCheck (
   NonZero (..),
   Positive (..),
  )
-import Test.QuickCheck.GenT (MonadGen (..), elements, frequency, listOf1, suchThat)
+import Test.QuickCheck.GenT (MonadGen (..), elements, listOf1, oneof, suchThat)
 
 -- | Returns the provided number.
 -- Negative: returns a value that is not equal to the provided number.
@@ -62,16 +62,8 @@ antiChoose :: (Integral a, Random a) => (a, a) -> (a, a) -> AntiGen a
 antiChoose rng@(lo, hi) (boundLo, boundHi)
   | lo > boundLo || boundHi > hi =
       choose rng
-        |! frequency
-          ( mconcat
-              [ [ (fromIntegral $ lo - boundLo, choose rngLo)
-                | lo > boundLo
-                ]
-              , [ (fromIntegral $ boundHi - hi, choose rngHi)
-                | boundHi > hi
-                ]
-              ]
-          )
+        |! oneof
+          ([choose rngLo | lo > boundLo] <> [choose rngHi | boundHi > hi])
   | otherwise = choose rng
   where
     rngLo = (boundLo, pred lo)
