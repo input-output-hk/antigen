@@ -1,3 +1,5 @@
+{-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 
@@ -5,8 +7,10 @@ module Main (main) where
 
 import Control.Monad (replicateM)
 import Data.Data (Proxy (..))
+import Data.Word (Word32, Word64)
 import Test.AntiGen (
   AntiGen,
+  antiChooseBounded,
   antiNegative,
   antiNonNegative,
   antiNonPositive,
@@ -20,7 +24,7 @@ import Test.AntiGen (
   (||!),
  )
 import Test.AntiGen.Internal (countDecisionPoints, evalToPartial)
-import Test.Hspec (Spec, describe, hspec, shouldBe)
+import Test.Hspec (Spec, describe, hspec, shouldBe, shouldSatisfy)
 import Test.Hspec.QuickCheck (prop)
 import Test.QuickCheck (
   Arbitrary (..),
@@ -45,6 +49,7 @@ import Test.QuickCheck (
   (===),
  )
 import Test.QuickCheck.GenT (MonadGen (..), listOf1, oneof)
+import Type.Reflection (Typeable, typeRep)
 
 antiGenPositive :: AntiGen Int
 antiGenPositive = (getPositive @Int <$> arbitrary) |! (getNonPositive <$> arbitrary)
@@ -159,6 +164,12 @@ zapAntiGenSpec =
             )
           ]
 
+chooseBoundedIntegralTest :: forall a. Typeable a => Spec
+chooseBoundedIntegralTest =
+  prop (show (typeRep @a) <> " (0, n)") $ \(Positive (n :: Word64)) -> do
+    res <- zapAntiGen 1 (antiChooseBounded (0, n))
+    pure $ res `shouldSatisfy` (> n)
+
 utilsSpec :: Spec
 utilsSpec =
   describe "utils" $ do
@@ -209,6 +220,10 @@ utilsSpec =
             [ ("null", null res)
             , ("nonpositive", length (filter (<= 0) res) == 1)
             ]
+    describe "chooseBoundedIntegral" $ do
+      chooseBoundedIntegralTest @Word64
+      chooseBoundedIntegralTest @Word32
+      chooseBoundedIntegralTest @Int
 
 main :: IO ()
 main = hspec $ do

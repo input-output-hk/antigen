@@ -130,7 +130,7 @@ zapAntiGen :: Int -> AntiGen a -> Gen a
 zapAntiGen n = fmap evalPartial <$> zapNTimes n <=< evalToPartial
 
 -- | Create a negative generator from an `AntiGen` by introducing at most
--- `n` mistakes. If there are no decision points, it will return `Nothing`. 
+-- `n` mistakes. If there are no decision points, it will return `Nothing`.
 tryZapAntiGen :: Int -> AntiGen a -> Gen (Maybe a)
 tryZapAntiGen n ag = do
   p <- evalToPartial ag
