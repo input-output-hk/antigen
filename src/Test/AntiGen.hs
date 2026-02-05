@@ -58,21 +58,21 @@ faultyBool b = pure b |! pure (not b)
 
 -- | Generates a value from the first range.
 -- Negative: Generates a value from the second range excluding the first range.
---
--- Note: The second range must not be a subset of the first range!
 antiChoose :: (Integral a, Random a) => (a, a) -> (a, a) -> AntiGen a
-antiChoose rng@(lo, hi) (boundLo, boundHi) =
-  choose rng
-    |! frequency
-      ( mconcat
-          [ [ (fromIntegral $ lo - boundLo, choose rngLo)
-            | lo > boundLo
-            ]
-          , [ (fromIntegral $ boundHi - hi, choose rngHi)
-            | boundHi > hi
-            ]
-          ]
-      )
+antiChoose rng@(lo, hi) (boundLo, boundHi)
+  | lo > boundLo || boundHi > hi =
+      choose rng
+        |! frequency
+          ( mconcat
+              [ [ (fromIntegral $ lo - boundLo, choose rngLo)
+                | lo > boundLo
+                ]
+              , [ (fromIntegral $ boundHi - hi, choose rngHi)
+                | boundHi > hi
+                ]
+              ]
+          )
+  | otherwise = choose rng
   where
     rngLo = (boundLo, pred lo)
     rngHi = (succ hi, boundHi)
