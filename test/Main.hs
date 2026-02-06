@@ -7,9 +7,11 @@ module Main (main) where
 
 import Control.Monad (replicateM)
 import Data.Data (Proxy (..))
-import Data.Word (Word32, Word64)
+import Data.List (sort)
+import Data.Word (Word32, Word64, Word8)
 import Test.AntiGen (
   AntiGen,
+  antiChoose,
   antiChooseBounded,
   antiNegative,
   antiNonNegative,
@@ -196,17 +198,17 @@ utilsSpec =
           res <- zapAntiGen 1 $ faultyTry s
           pure $ res =/= s
     describe "antiPositive" $ do
-      prop "positive" . forAll (runAntiGen $ antiPositive @Int) $ (> 0)
-      prop "negative" . forAll (zapAntiGen 1 $ antiPositive @Int) $ (<= 0)
+      prop "positive" $ forAll (runAntiGen $ antiPositive @Int) (> 0)
+      prop "negative" $ forAll (zapAntiGen 1 $ antiPositive @Int) (<= 0)
     describe "antiNegative" $ do
-      prop "positive" . forAll (runAntiGen $ antiNegative @Int) $ (< 0)
-      prop "negative" . forAll (zapAntiGen 1 $ antiNegative @Int) $ (>= 0)
+      prop "positive" $ forAll (runAntiGen $ antiNegative @Int) (< 0)
+      prop "negative" $ forAll (zapAntiGen 1 $ antiNegative @Int) (>= 0)
     describe "antiNonPositive" $ do
-      prop "positive" . forAll (runAntiGen $ antiNonPositive @Int) $ (<= 0)
-      prop "negative" . forAll (zapAntiGen 1 $ antiNonPositive @Int) $ (> 0)
+      prop "positive" $ forAll (runAntiGen $ antiNonPositive @Int) (<= 0)
+      prop "negative" $ forAll (zapAntiGen 1 $ antiNonPositive @Int) (> 0)
     describe "antiNonNegative" $ do
-      prop "positive" . forAll (runAntiGen $ antiNonNegative @Int) $ (>= 0)
-      prop "negative" . forAll (zapAntiGen 1 $ antiNonNegative @Int) $ (< 0)
+      prop "positive" $ forAll (runAntiGen $ antiNonNegative @Int) (>= 0)
+      prop "negative" $ forAll (zapAntiGen 1 $ antiNonNegative @Int) (< 0)
     describe "(||!)" $ do
       prop "positive" $ do
         res <- runAntiGen $ listOf1 (antiPositive @Int) ||! pure []
@@ -220,6 +222,30 @@ utilsSpec =
             [ ("null", null res)
             , ("nonpositive", length (filter (<= 0) res) == 1)
             ]
+    describe "antiChoose" $ do
+      prop "positive and negative" $ do
+        vals <- sort <$> replicateM 4 (arbitrary @Word8)
+        case vals of
+          [loB, lo, hi, hiB] -> do
+            let g = antiChoose @Word8 (lo, hi) (loB, hiB)
+            pos <- runAntiGen g
+            neg <- zapAntiGen 1 g
+            let
+              failMsg =
+                unlines
+                  [ "loB = " <> show loB
+                  , "hiB = " <> show hiB
+                  , "lo = " <> show lo
+                  , "hi = " <> show hi
+                  , "pos = " <> show pos
+                  , "neg = " <> show neg
+                  ]
+              posGood = pos >= lo && pos <= hi
+              negGood = neg < lo || (neg >= hi && neg <= hiB)
+              trivial = lo == loB && hi == hiB
+            pure . counterexample failMsg $
+              trivial .||. counterexample "pos failure" posGood .&&. counterexample "neg failure" negGood
+          _ -> error "Impossible happened"
     describe "chooseBoundedIntegral" $ do
       chooseBoundedIntegralTest @Word64
       chooseBoundedIntegralTest @Word32
