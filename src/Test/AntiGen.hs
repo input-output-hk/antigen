@@ -19,6 +19,7 @@ module Test.AntiGen (
 
   -- * AntiGen combinators
   faultyNum,
+  faultyNumRange,
   faultyBool,
   faultyTry,
   faultyTryGen,
@@ -30,6 +31,7 @@ module Test.AntiGen (
   antiNonNegative,
   antiJust,
   antiNonEmpty,
+  antiSamePair,
   antiDistinctPair,
 ) where
 
@@ -44,12 +46,15 @@ import Test.QuickCheck (
   NonZero (..),
   Positive (..),
  )
-import Test.QuickCheck.GenT (MonadGen (..), elements, listOf1, oneof, suchThat)
+import Test.QuickCheck.GenT (MonadGen (..), listOf1, oneof, suchThat)
 
 -- | Returns the provided number.
 -- Negative: returns a value that is not equal to the provided number.
 faultyNum :: (Eq a, Num a, Arbitrary a) => a -> AntiGen a
 faultyNum n = pure n |! ((n +) . getNonZero <$> arbitrary)
+
+faultyNumRange :: (Random a, Eq a) => a -> (a, a) -> AntiGen a
+faultyNumRange n rng = pure n |! (choose rng `suchThat` (/= n))
 
 -- | Returns the provided `Bool`.
 -- Negative: returns the negation of that `Bool`.
@@ -123,17 +128,23 @@ antiJust x = pure (Just x) ||! pure Nothing
 antiNonEmpty :: AntiGen a -> AntiGen [a]
 antiNonEmpty x = listOf1 x ||! pure []
 
+antiSamePair :: (Arbitrary a, Num a, Eq a) => AntiGen (a, a)
+antiSamePair =
+  ((\x -> (x, x)) <$> arbitrary)
+    |! ( do
+           x <- arbitrary
+           NonZero s <- arbitrary
+           return (x, x + s)
+       )
+
 -- | Generates a pair (x, y) where x /= y.
 -- Negative: Generates a pair (x, y) where x == y.
 antiDistinctPair :: (Num a, Arbitrary a, Eq a) => AntiGen (a, a)
 antiDistinctPair =
   ( do
       x <- arbitrary
-      -- Generate a non-zero offset to guarantee x /= y
-      s <- elements [-1, 1]
-      a <- arbitrary
-      let offset = if a == 0 then 1 else abs a
-      return (x, x + (s * offset))
+      NonZero s <- arbitrary
+      return (x, x + s)
   )
     |! ( do
            x <- arbitrary
