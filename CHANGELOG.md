@@ -1,8 +1,9 @@
 # Revision history for antigen
 
-## 0.3.1.1
+## 0.3.2.0
 
-*
+* Add `antiSamePair`
+* Add `faultyNumRange`
 
 ## 0.3.1.0
 
