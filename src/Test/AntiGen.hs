@@ -140,6 +140,9 @@ antiJust x = pure (Just x) ||! pure Nothing
 antiNonEmpty :: AntiGen a -> AntiGen [a]
 antiNonEmpty x = listOf1 x ||! pure []
 
+-- | Generate a pair with equal values
+--
+-- Negative: Generates a pair of distinct values
 antiSamePair :: (Arbitrary a, Num a, Eq a) => AntiGen (a, a)
 antiSamePair =
   ((\x -> (x, x)) <$> arbitrary)
