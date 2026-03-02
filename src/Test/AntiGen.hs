@@ -66,7 +66,7 @@ faultyBool b = pure b |! pure (not b)
 -- | Generates a value from the first range.
 --
 -- Negative: Generates a value from the second range excluding the first range.
-antiChoose :: (Integral a, Random a) => (a, a) -> (a, a) -> AntiGen a
+antiChoose :: (Random a, Ord a, Num a) => (a, a) -> (a, a) -> AntiGen a
 antiChoose rng@(lo, hi) (boundLo, boundHi)
   | lo > boundLo || boundHi > hi =
       choose rng
@@ -74,14 +74,14 @@ antiChoose rng@(lo, hi) (boundLo, boundHi)
           ([choose rngLo | lo > boundLo] <> [choose rngHi | boundHi > hi])
   | otherwise = choose rng
   where
-    rngLo = (boundLo, pred lo)
-    rngHi = (succ hi, boundHi)
+    rngLo = (boundLo, lo - 1)
+    rngHi = (hi + 1, boundHi)
 
 -- | Generates a value from the range.
 --
 -- Negative: Returns a random value outside the range between `minBound` and
 -- `maxBound`.
-antiChooseBounded :: (Integral a, Random a, Bounded a) => (a, a) -> AntiGen a
+antiChooseBounded :: (Num a, Ord a, Random a, Bounded a) => (a, a) -> AntiGen a
 antiChooseBounded rng = antiChoose rng (minBound, maxBound)
 
 -- | Returns the provided value
