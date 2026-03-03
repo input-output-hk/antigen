@@ -11,11 +11,12 @@
 
 module Test.AntiGen (
   AntiGen,
+  ZapResult (..),
   (|!),
   (||!),
+  annotatedAnti,
   runAntiGen,
   zapAntiGen,
-  tryZapAntiGen,
 
   -- * AntiGen combinators
   faultyNum,
