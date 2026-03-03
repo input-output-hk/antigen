@@ -1,4 +1,5 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
@@ -7,7 +8,10 @@ module Main (main) where
 
 import Control.Monad (replicateM)
 import Data.Data (Proxy (..))
+import Paths_antigen (getDataDir)
+import System.FilePath ((</>))
 import Data.List (sort)
+import Data.List.NonEmpty (NonEmpty (..))
 import Data.Word (Word32, Word64, Word8)
 import Test.AntiGen (
   AntiGen,
@@ -25,8 +29,17 @@ import Test.AntiGen (
   (|!),
   (||!),
  )
-import Test.AntiGen.Internal (countDecisionPoints, evalToPartial)
-import Test.Hspec (Spec, describe, hspec, shouldBe, shouldSatisfy)
+import Test.AntiGen.Internal (
+  ZapResult (..),
+  countDecisionPoints,
+  evalToPartial,
+  prettyZapResult,
+  withAnnotation,
+  zapAntiGenResult,
+ )
+import qualified Data.Text as T
+import Test.Hspec (Spec, describe, hspec, it, shouldBe, shouldSatisfy)
+import Test.Hspec.Golden (Golden (..))
 import Test.Hspec.QuickCheck (prop)
 import Test.QuickCheck (
   Arbitrary (..),
@@ -87,6 +100,67 @@ antiGenEither = do
         l <- antiGenSmall
         replicateM l $ pure True |! pure False
     ]
+
+annotatedPositive :: AntiGen Int
+annotatedPositive =
+  withAnnotation "must be positive" $
+    (getPositive @Int <$> arbitrary) |! (getNonPositive <$> arbitrary)
+
+annotatedTuple :: AntiGen (Int, Int)
+annotatedTuple = do
+  x <- withAnnotation "first positive" $ (getPositive @Int <$> arbitrary) |! (getNonPositive <$> arbitrary)
+  y <- withAnnotation "second positive" $ (getPositive @Int <$> arbitrary) |! (getNonPositive <$> arbitrary)
+  pure (x, y)
+
+complexAnnotations :: AntiGen (Int, Int)
+complexAnnotations =
+  withAnnotation "root" $ do
+    a <- withAnnotation "a" antiPositive
+    b <- withAnnotation "b" antiPositive
+    pure (a, b)
+
+-- | Annotated sum type - each branch has its own annotation
+annotatedEither :: AntiGen (Either Int Int)
+annotatedEither =
+  withAnnotation "either" $
+    oneof
+      [ withAnnotation "left" $ Left <$> antiPositive
+      , withAnnotation "right" $ Right <$> antiNegative
+      ]
+
+-- | Three levels of nesting
+deeplyNested :: AntiGen Int
+deeplyNested =
+  withAnnotation "level1" $
+    withAnnotation "level2" $
+      withAnnotation "level3" $
+        antiPositive
+
+-- | Mixed annotated and unannotated in sequence
+mixedAnnotations :: AntiGen (Int, Int, Int)
+mixedAnnotations = do
+  a <- withAnnotation "first" antiPositive
+  b <- antiPositive -- unannotated
+  c <- withAnnotation "third" antiPositive
+  pure (a, b, c)
+
+-- | Sibling scopes that don't inherit from each other
+siblingScopes :: AntiGen (Int, Int)
+siblingScopes = do
+  a <- withAnnotation "scopeA" antiPositive
+  b <- withAnnotation "scopeB" antiPositive
+  pure (a, b)
+
+-- | Annotation wrapping a pure value (no decision points inside)
+annotatedPure :: AntiGen Int
+annotatedPure = withAnnotation "pure" $ pure 42
+
+-- | Annotation with decision point after the annotated section
+annotationThenDecision :: AntiGen (Int, Int)
+annotationThenDecision = do
+  a <- withAnnotation "annotated" antiPositive
+  b <- antiPositive -- should have empty annotation
+  pure (a, b)
 
 noneOf :: [Bool] -> Property
 noneOf [] = property True
@@ -251,6 +325,147 @@ utilsSpec =
       chooseBoundedIntegralTest @Word32
       chooseBoundedIntegralTest @Int
 
+withAnnotationSpec :: Spec
+withAnnotationSpec =
+  describe "withAnnotation" $ do
+    prop "behaves like (|!) for runAntiGen (active generator)" $ do
+      x <- runAntiGen annotatedPositive
+      pure $ x > 0
+    prop "behaves like (|!) for zapAntiGen (alternative generator)" $ do
+      x <- zapAntiGen 1 annotatedPositive
+      pure $ x <= 0
+    prop "annotation is captured in ZapResult when zapped" $ do
+      result <- zapAntiGenResult 1 annotatedPositive
+      pure $
+        counterexample ("annotations: " <> show (zrAnnotation result)) $
+          zrAnnotation result === ["must be positive" :| []]
+    prop "no annotation in ZapResult when not zapped (n=0)" $ do
+      result <- zapAntiGenResult 0 annotatedPositive
+      pure $ zrAnnotation result === []
+    prop "multiple annotations collected when zapping multiple points" $ do
+      result <- zapAntiGenResult 2 annotatedTuple
+      pure $
+        counterexample ("annotations: " <> show (zrAnnotation result)) $
+          length (zrAnnotation result) === 2
+            .&&. ("first positive" :| []) `elem` zrAnnotation result
+            .&&. ("second positive" :| []) `elem` zrAnnotation result
+    prop "single zap of composed annotated generator gets one annotation" $ do
+      result <- zapAntiGenResult 1 annotatedTuple
+      pure $
+        counterexample ("annotations: " <> show (zrAnnotation result)) $
+          length (zrAnnotation result) === 1
+    prop "non-annotated (|!) produces empty annotation list" $ do
+      result <- zapAntiGenResult 1 antiGenPositive
+      pure $ zrAnnotation result === []
+    prop "nested withAnnotation produces hierarchical path" $ do
+      let nested =
+            withAnnotation "foo" $
+              withAnnotation "bar" $
+                (getPositive @Int <$> arbitrary) |! (getNonPositive <$> arbitrary)
+      result <- zapAntiGenResult 1 nested
+      pure $
+        counterexample ("annotations: " <> show (zrAnnotation result)) $
+          zrAnnotation result === ["foo" :| ["bar"]]
+    prop "withAnnotation on unannotated produces single-element path" $ do
+      let annotated = withAnnotation "outer" $ (getPositive @Int <$> arbitrary) |! (getNonPositive <$> arbitrary)
+      result <- zapAntiGenResult 1 annotated
+      pure $
+        counterexample ("annotations: " <> show (zrAnnotation result)) $
+          zrAnnotation result === ["outer" :| []]
+    prop "complexAnnotations: zapping both points shows hierarchical paths" $ do
+      result <- zapAntiGenResult 2 complexAnnotations
+      pure $
+        counterexample ("annotations: " <> show (zrAnnotation result)) $
+          length (zrAnnotation result) === 2
+            .&&. ("root" :| ["a"]) `elem` zrAnnotation result
+            .&&. ("root" :| ["b"]) `elem` zrAnnotation result
+    prop "annotatedEither: sum type branches have correct paths" $ do
+      result <- zapAntiGenResult 1 annotatedEither
+      pure $
+        counterexample ("annotations: " <> show (zrAnnotation result)) $
+          (zrAnnotation result === ["either" :| ["left"]])
+            .||. (zrAnnotation result === ["either" :| ["right"]])
+    prop "deeplyNested: three-level path captured" $ do
+      result <- zapAntiGenResult 1 deeplyNested
+      pure $
+        counterexample ("annotations: " <> show (zrAnnotation result)) $
+          zrAnnotation result === ["level1" :| ["level2", "level3"]]
+    prop "mixedAnnotations: only annotated points produce annotations" $ do
+      result <- zapAntiGenResult 3 mixedAnnotations
+      pure $
+        counterexample ("annotations: " <> show (zrAnnotation result)) $
+          -- 3 decision points zapped, but only 2 have annotations
+          zrZapped result === 3
+            .&&. length (zrAnnotation result) === 2
+            .&&. ("first" :| []) `elem` zrAnnotation result
+            .&&. ("third" :| []) `elem` zrAnnotation result
+    prop "siblingScopes: siblings don't inherit from each other" $ do
+      result <- zapAntiGenResult 2 siblingScopes
+      pure $
+        counterexample ("annotations: " <> show (zrAnnotation result)) $
+          length (zrAnnotation result) === 2
+            .&&. ("scopeA" :| []) `elem` zrAnnotation result
+            .&&. ("scopeB" :| []) `elem` zrAnnotation result
+    prop "annotatedPure: no decision points means no annotations" $ do
+      result <- zapAntiGenResult 1 annotatedPure
+      pure $
+        counterexample ("annotations: " <> show (zrAnnotation result)) $
+          zrAnnotation result === []
+            .&&. zrZapped result === 0
+    prop "annotationThenDecision: scope ends after annotated section" $ do
+      result <- zapAntiGenResult 2 annotationThenDecision
+      pure $
+        counterexample ("annotations: " <> show (zrAnnotation result)) $
+          -- 2 decision points zapped, but only 1 has an annotation
+          zrZapped result === 2
+            .&&. length (zrAnnotation result) === 1
+            .&&. ("annotated" :| []) `elem` zrAnnotation result
+
+-- | Golden test that doesn't create actual files
+golden :: String -> String -> IO (Golden String)
+golden name actual = do
+  dataDir <- getDataDir
+  pure $
+    Golden
+      { output = actual
+      , encodePretty = id
+      , writeToFile = writeFile
+      , readFromFile = readFile
+      , goldenFile = dataDir </> ".golden" </> name </> "golden"
+      , actualFile = Nothing
+      , failFirstTime = False
+      }
+
+prettyZapResultSpec :: Spec
+prettyZapResultSpec =
+  describe "prettyZapResult" $ do
+    it "no zaps" $
+      golden "no_zaps" $
+        T.unpack $ prettyZapResult $ ZapResult () [] 0
+    it "single zap without annotation" $
+      golden "single_zap_no_annotation" $
+        T.unpack $ prettyZapResult $ ZapResult () [] 1
+    it "single zap with simple annotation" $
+      golden "single_zap_simple" $
+        T.unpack $ prettyZapResult $ ZapResult () ["positive" :| []] 1
+    it "single zap with nested annotation" $
+      golden "single_zap_nested" $
+        T.unpack $ prettyZapResult $ ZapResult () ["root" :| ["child", "leaf"]] 1
+    it "multiple zaps with annotations" $
+      golden "multiple_zaps" $
+        T.unpack $
+          prettyZapResult $
+            ZapResult
+              ()
+              [ "user" :| ["name"]
+              , "user" :| ["email"]
+              , "address" :| ["street"]
+              ]
+              3
+    it "zaps with mixed annotated and unannotated" $
+      golden "mixed_annotations" $
+        T.unpack $ prettyZapResult $ ZapResult () ["annotated" :| []] 3
+
 main :: IO ()
 main = hspec $ do
   describe "AntiGen" $ do
@@ -292,3 +507,5 @@ main = hspec $ do
           pure $ a : b
         pure $ x === [30, 31, 32]
     utilsSpec
+    withAnnotationSpec
+    prettyZapResultSpec
