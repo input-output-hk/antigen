@@ -11,11 +11,13 @@
 
 module Test.AntiGen (
   AntiGen,
+  ZapResult (..),
   (|!),
+  (#!),
   (||!),
+  withAnnotation,
   runAntiGen,
   zapAntiGen,
-  tryZapAntiGen,
 
   -- * AntiGen combinators
   faultyNum,
@@ -37,7 +39,15 @@ module Test.AntiGen (
 
 import Control.Monad (join)
 import System.Random (Random)
-import Test.AntiGen.Internal
+import Test.AntiGen.Internal (
+  AntiGen,
+  ZapResult (..),
+  (#!),
+  (|!),
+  runAntiGen,
+  withAnnotation,
+  zapAntiGen,
+ )
 import Test.QuickCheck (
   Arbitrary (..),
   Negative (..),

@@ -2,46 +2,55 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 module Test.AntiGen.Internal (
   AntiGen,
+  ZapResult (..),
+  prettyZapResult,
   (|!),
+  (#!),
   zapAntiGen,
-  tryZapAntiGen,
+  zapAntiGenResult,
   runAntiGen,
   evalToPartial,
   evalPartial,
   countDecisionPoints,
   zapAt,
+  withAnnotation,
 ) where
 
 import Control.Monad ((<=<))
-import Control.Monad.Free.Church (F (..), MonadFree (..))
-import Control.Monad.Free.Class (wrapT)
-import Control.Monad.State.Strict (MonadState (..), StateT (..), evalStateT, modify')
-import Control.Monad.Trans (MonadTrans (..))
-import Test.QuickCheck (Gen, getSize)
-import Test.QuickCheck.GenT (GenT (..), MonadGen (..), runGenT)
+import Control.Monad.Free (Free (..))
+import Control.Monad.Free.Church (F (..), MonadFree (..), fromF)
+import Data.List.NonEmpty (NonEmpty)
+import qualified Data.List.NonEmpty as NE
+import Data.Text (Text)
+import qualified Data.Text as T
+import Test.QuickCheck (getSize)
+import Test.QuickCheck.Gen (Gen (..))
+import Test.QuickCheck.GenT (MonadGen (..))
 
 data BiGen next where
   BiGen :: Gen t -> Maybe (Gen t) -> (t -> next) -> BiGen next
+  Annotate :: Text -> AntiGen t -> (t -> next) -> BiGen next
 
 instance Functor BiGen where
   fmap f (BiGen p n c) = BiGen p n $ f . c
+  fmap f (Annotate ann inner c) = Annotate ann inner $ f . c
 
 newtype AntiGen a = AntiGen (F BiGen a)
   deriving (Functor, Applicative, Monad, MonadFree BiGen)
 
 mapGen :: (forall x. Gen x -> Gen x) -> AntiGen a -> AntiGen a
-mapGen f (AntiGen (F m)) = m pure $ \(BiGen pos neg c) ->
-  wrap $ BiGen (f pos) (f <$> neg) c
+mapGen f (AntiGen (F m)) = m pure $ \case
+  BiGen pos neg c -> wrap $ BiGen (f pos) (f <$> neg) c
+  Annotate ann inner c -> wrap $ Annotate ann (mapGen f inner) c
 
 instance MonadGen AntiGen where
   liftGen g = AntiGen $ F $ \p b -> b $ BiGen g Nothing p
@@ -50,22 +59,34 @@ instance MonadGen AntiGen where
   resize n m = mapGen (resize n) m
   choose = liftGen . choose
 
+mkAntiGen :: Gen a -> Gen a -> AntiGen a
+mkAntiGen active alt =
+  AntiGen $ F $ \p b -> b $ BiGen (p <$> active) (Just $ p <$> alt) id
+
 -- | Create a negatable generator by providing a positive and a negative
 -- generator
 (|!) :: Gen a -> Gen a -> AntiGen a
-pos |! neg = AntiGen $ F $ \p b -> b $ BiGen pos (Just neg) p
+(|!) = mkAntiGen
+
+(#!) :: AntiGen a -> Text -> AntiGen a
+(#!) = flip withAnnotation
+
+-- | Wrap an AntiGen with an annotation
+withAnnotation :: Text -> AntiGen a -> AntiGen a
+withAnnotation ann inner = wrap $ Annotate ann inner pure
 
 data DecisionPoint next where
   DecisionPoint ::
     { dpValue :: t
-    , dpPositiveGen :: Gen t
-    , dpNegativeGen :: Maybe (Gen t)
+    , dpActiveGen :: Gen t
+    , dpAlternativeGen :: Maybe (Gen t)
+    , dpAnnotation :: [Text]
     , dpContinuation :: t -> next
     } ->
     DecisionPoint next
 
 instance Functor DecisionPoint where
-  fmap f (DecisionPoint v p n c) = DecisionPoint v p n $ f . c
+  fmap f (DecisionPoint v p n a c) = DecisionPoint v p n a $ f . c
 
 continue :: DecisionPoint next -> next
 continue DecisionPoint {..} = dpContinuation dpValue
@@ -74,49 +95,130 @@ newtype PartialGen a = PartialGen (F DecisionPoint a)
   deriving (Functor, Applicative, Monad, MonadFree DecisionPoint)
 
 evalToPartial :: AntiGen a -> Gen (PartialGen a)
-evalToPartial (AntiGen (F m)) = runGenT $ m pure $ \(BiGen pos mNeg c) -> do
-  value <- liftGen pos
-  wrapT $ DecisionPoint value pos mNeg c
+evalToPartial (AntiGen f) = evalToPartialWithPath [] (fromF f)
+
+evalToPartialWithPath :: [Text] -> Free BiGen a -> Gen (PartialGen a)
+evalToPartialWithPath _ (Pure x) = pure $ pure x
+evalToPartialWithPath path (Free (Annotate ann (AntiGen inner) cont)) = MkGen $ \qcGen sz ->
+  -- Evaluate inner with extended path, then continue with original path,
+  -- using split generators so randomness is threaded correctly.
+  let (qcGenInner, qcGenCont) = split qcGen
+      innerPartial =
+        unGen
+          (evalToPartialWithPath (path <> [ann]) (fromF inner))
+          qcGenInner
+          sz
+   in innerPartial >>= \t ->
+        unGen (evalToPartialWithPath path (cont t)) qcGenCont sz
+evalToPartialWithPath path (Free (BiGen activeGen altGen cont)) = MkGen $ \qcGen sz ->
+  let (qcGenValue, qcGenCont) = split qcGen
+      value = unGen activeGen qcGenValue sz
+   in wrap $
+        DecisionPoint
+          { dpValue = value
+          , dpActiveGen = activeGen
+          , dpAlternativeGen = altGen
+          , dpAnnotation = path
+          , dpContinuation = \v ->
+              unGen (evalToPartialWithPath path (cont v)) qcGenCont sz
+          }
 
 countDecisionPoints :: PartialGen a -> Int
 countDecisionPoints (PartialGen (F m)) = m (const 0) $ \dp@DecisionPoint {..} ->
-  case dpNegativeGen of
+  case dpAlternativeGen of
     Just _ -> succ $ continue dp
     Nothing -> continue dp
 
-zapAt :: Int -> PartialGen a -> Gen (PartialGen a)
-zapAt cutoffDepth (PartialGen (F m)) = do
-  let
-    wrapGenState mm = StateT $ \s -> GenT $ \g sz ->
-      let eval (StateT x) =
-            let GenT f = x s
-             in f g sz
-       in wrap $ eval <$> mm
-  runGenT . (`evalStateT` cutoffDepth) . m pure $ \dp@DecisionPoint {..} ->
-    case dpNegativeGen of
-      Just neg -> do
-        d <- get
-        modify' pred
-        if d == 0
-          then do
-            -- Negate the generator
-            value <- lift $ liftGen neg
-            wrapGenState $ DecisionPoint value neg Nothing dpContinuation
-          else wrapGenState dp
-      Nothing -> wrapGenState dp
+data ZapResult a = ZapResult
+  { zrValue :: a
+  , zrAnnotation :: [NonEmpty Text]
+  , zrZapped :: !Int
+  }
+  deriving (Functor)
 
-zap :: PartialGen a -> Gen (PartialGen a)
+instance Semigroup (ZapResult a) where
+  ZapResult v a1 z1 <> ZapResult _ a2 z2 =
+    ZapResult v (a1 <> a2) (z1 + z2)
+
+-- | Pretty print the annotation paths from a ZapResult
+prettyZapResult :: ZapResult a -> Text
+prettyZapResult ZapResult {..} =
+  T.unlines $
+    [ "Zapped " <> T.pack (show zrZapped) <> " decision points"
+    ]
+      <> case zrAnnotation of
+        [] -> []
+        anns -> "Annotations:" : map prettyPath anns
+  where
+    prettyPath :: NonEmpty Text -> Text
+    prettyPath path = "  - " <> T.intercalate "." (NE.toList path)
+
+zapAt :: Int -> PartialGen a -> Gen (ZapResult (PartialGen a))
+zapAt cutoffDepth p@(PartialGen f)
+  | countDecisionPoints p == 0 = pure $ ZapResult p [] 0
+  | otherwise = MkGen $ \qcGen sz ->
+    let
+      go :: Int -> Free DecisionPoint a -> ZapResult (PartialGen a)
+      go n = \case
+        Pure x -> ZapResult (pure x) mempty 0
+        Free dp@DecisionPoint {..} ->
+          case dpAlternativeGen of
+            Nothing ->
+              let ZapResult _ ann zapped = go n $ continue dp
+               in ZapResult
+                    { zrValue =
+                        wrap $
+                          DecisionPoint
+                            { dpContinuation = zrValue . go n . dpContinuation
+                            , ..
+                            }
+                    , zrAnnotation = ann
+                    , zrZapped = zapped
+                    }
+            Just altGen
+              | n == 0 ->
+                  let ZapResult _ _ zapped = go (pred n) $ continue dp
+                   in ZapResult
+                        { zrValue =
+                            let newValue = unGen altGen qcGen sz
+                             in wrap $
+                                  DecisionPoint
+                                    { dpValue = newValue
+                                    , dpActiveGen = altGen
+                                    , dpAlternativeGen = Nothing
+                                    , dpContinuation = zrValue . go (pred n) . dpContinuation
+                                    , ..
+                                    }
+                        , zrAnnotation = maybe [] (: []) (NE.nonEmpty dpAnnotation)
+                        , zrZapped = succ zapped
+                        }
+              | otherwise ->
+                  let ZapResult _ ann zapped = go (pred n) $ continue dp
+                   in ZapResult
+                        { zrValue =
+                            wrap $
+                              DecisionPoint
+                                { dpContinuation = zrValue . go (pred n) . dpContinuation
+                                , ..
+                                }
+                        , zrAnnotation = ann
+                        , zrZapped = zapped
+                        }
+     in
+      go cutoffDepth $ fromF f
+
+zap :: PartialGen a -> Gen (ZapResult (PartialGen a))
 zap p
-  | let maxDepth = countDecisionPoints p
-  , maxDepth > 0 = do
-      cutoffDepth <- choose (0, maxDepth - 1)
-      zapAt cutoffDepth p
-  | otherwise = pure p
+  | countDecisionPoints p == 0 = pure $ ZapResult p [] 0
+  | otherwise = (`zapAt` p) =<< choose (0, countDecisionPoints p - 1)
 
-zapNTimes :: Int -> PartialGen a -> Gen (PartialGen a)
-zapNTimes n
-  | n <= 0 = pure
-  | otherwise = zapNTimes (n - 1) <=< zap
+zapNTimes :: Int -> PartialGen a -> Gen (ZapResult a)
+zapNTimes n x
+  | n <= 0 = pure $ ZapResult (evalPartial x) [] 0
+  | otherwise = do
+      zapResult <- zap x
+      rest <- zapNTimes (pred n) $ zrValue zapResult
+      pure $ rest <> fmap evalPartial zapResult
 
 evalPartial :: PartialGen a -> a
 evalPartial (PartialGen (F m)) = m id continue
@@ -127,16 +229,12 @@ evalPartial (PartialGen (F m)) = m id continue
 -- the `AntiGen` is lower than `n`, then the number of negations will be less
 -- than `n`.
 zapAntiGen :: Int -> AntiGen a -> Gen a
-zapAntiGen n = fmap evalPartial <$> zapNTimes n <=< evalToPartial
+zapAntiGen = fmap (fmap zrValue) . zapAntiGenResult
 
 -- | Create a negative generator from an `AntiGen` by introducing at most
 -- `n` mistakes. If there are no decision points, it will return `Nothing`.
-tryZapAntiGen :: Int -> AntiGen a -> Gen (Maybe a)
-tryZapAntiGen n ag = do
-  p <- evalToPartial ag
-  if countDecisionPoints p > 0
-    then Just . evalPartial <$> zapNTimes n p
-    else pure Nothing
+zapAntiGenResult :: Int -> AntiGen a -> Gen (ZapResult a)
+zapAntiGenResult n = zapNTimes n <=< evalToPartial
 
 -- | Create a positive generator from the provided `AntiGen`.
 runAntiGen :: AntiGen a -> Gen a
