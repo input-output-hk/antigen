@@ -3,7 +3,7 @@
 module Main (main) where
 
 import Criterion.Main (Benchmarkable, bench, defaultMain, nfIO)
-import Test.AntiGen.Internal (AntiGen, evalPartial, evalToPartial, zapAt, (|!))
+import Test.AntiGen.Internal (AntiGen, evalPartial, evalToPartial, zapAt, zrValue, (|!))
 import Test.QuickCheck (Arbitrary (..), generate)
 import Test.QuickCheck.GenT (MonadGen (..))
 
@@ -21,7 +21,7 @@ bindList n
 
 bindListZap :: Int -> Int -> Benchmarkable
 bindListZap len i =
-  nfIO . generate . variant (12345 :: Int) . fmap evalPartial $
+  nfIO . generate . variant (12345 :: Int) . fmap (evalPartial . zrValue) $
     zapAt i =<< evalToPartial (bindList len)
 
 main :: IO ()
