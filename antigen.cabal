@@ -16,6 +16,7 @@ copyright:          2026 Input Output Global Inc (IOG)
 category:           Testing
 build-type:         Simple
 extra-doc-files:    CHANGELOG.md, README.md
+data-files:         .golden/*/golden
 tested-with:        GHC == 9.10.3
 
 source-repository head
@@ -47,9 +48,12 @@ test-suite antigen-test
     type:             exitcode-stdio-1.0
     hs-source-dirs:   test
     main-is:          Main.hs
+    other-modules:    Paths_antigen
+    autogen-modules:  Paths_antigen
     build-depends:
       base,
       antigen,
+      filepath,
       hspec,
       hspec-golden,
       QuickCheck,

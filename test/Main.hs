@@ -8,6 +8,8 @@ module Main (main) where
 
 import Control.Monad (replicateM)
 import Data.Data (Proxy (..))
+import Paths_antigen (getDataDir)
+import System.FilePath ((</>))
 import Data.List (sort)
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.Word (Word32, Word64, Word8)
@@ -423,19 +425,19 @@ annotatedAntiSpec =
             .&&. ("annotated" :| []) `elem` zrAnnotation result
 
 -- | Golden test that doesn't create actual files
-golden :: String -> String -> Golden String
-golden name actual =
-  Golden
-    { output = actual
-    , encodePretty = id
-    , writeToFile = writeFile
-    , readFromFile = readFile
-    , goldenFile = ".golden" </> name </> "golden"
-    , actualFile = Nothing
-    , failFirstTime = False
-    }
-  where
-    (</>) = (\a b -> a <> "/" <> b)
+golden :: String -> String -> IO (Golden String)
+golden name actual = do
+  dataDir <- getDataDir
+  pure $
+    Golden
+      { output = actual
+      , encodePretty = id
+      , writeToFile = writeFile
+      , readFromFile = readFile
+      , goldenFile = dataDir </> ".golden" </> name </> "golden"
+      , actualFile = Nothing
+      , failFirstTime = False
+      }
 
 prettyZapResultSpec :: Spec
 prettyZapResultSpec =
