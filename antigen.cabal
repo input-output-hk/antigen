@@ -51,8 +51,10 @@ test-suite antigen-test
       base,
       antigen,
       hspec,
+      hspec-golden,
       QuickCheck,
       quickcheck-transformer,
+      text,
 
 benchmark bench
   import: warnings

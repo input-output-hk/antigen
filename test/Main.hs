@@ -32,10 +32,13 @@ import Test.AntiGen.Internal (
   annotatedAnti,
   countDecisionPoints,
   evalToPartial,
+  prettyZapResult,
   withAnnotation,
   zapAntiGenResult,
  )
-import Test.Hspec (Spec, describe, hspec, shouldBe, shouldSatisfy)
+import qualified Data.Text as T
+import Test.Hspec (Spec, describe, hspec, it, shouldBe, shouldSatisfy)
+import Test.Hspec.Golden (defaultGolden)
 import Test.Hspec.QuickCheck (prop)
 import Test.QuickCheck (
   Arbitrary (..),
@@ -419,6 +422,36 @@ annotatedAntiSpec =
             .&&. length (zrAnnotation result) === 1
             .&&. ("annotated" :| []) `elem` zrAnnotation result
 
+prettyZapResultSpec :: Spec
+prettyZapResultSpec =
+  describe "prettyZapResult" $ do
+    it "no zaps" $
+      defaultGolden "no_zaps" $
+        T.unpack $ prettyZapResult $ ZapResult () [] 0
+    it "single zap without annotation" $
+      defaultGolden "single_zap_no_annotation" $
+        T.unpack $ prettyZapResult $ ZapResult () [] 1
+    it "single zap with simple annotation" $
+      defaultGolden "single_zap_simple" $
+        T.unpack $ prettyZapResult $ ZapResult () ["positive" :| []] 1
+    it "single zap with nested annotation" $
+      defaultGolden "single_zap_nested" $
+        T.unpack $ prettyZapResult $ ZapResult () ["root" :| ["child", "leaf"]] 1
+    it "multiple zaps with annotations" $
+      defaultGolden "multiple_zaps" $
+        T.unpack $
+          prettyZapResult $
+            ZapResult
+              ()
+              [ "user" :| ["name"]
+              , "user" :| ["email"]
+              , "address" :| ["street"]
+              ]
+              3
+    it "zaps with mixed annotated and unannotated" $
+      defaultGolden "mixed_annotations" $
+        T.unpack $ prettyZapResult $ ZapResult () ["annotated" :| []] 3
+
 main :: IO ()
 main = hspec $ do
   describe "AntiGen" $ do
@@ -461,3 +494,4 @@ main = hspec $ do
         pure $ x === [30, 31, 32]
     utilsSpec
     annotatedAntiSpec
+    prettyZapResultSpec

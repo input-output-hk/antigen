@@ -4,6 +4,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -11,6 +12,7 @@
 module Test.AntiGen.Internal (
   AntiGen,
   ZapResult (..),
+  prettyZapResult,
   (|!),
   (#!),
   zapAntiGen,
@@ -30,6 +32,7 @@ import Control.Monad.Free.Church (F (..), MonadFree (..), fromF)
 import Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import Data.Text (Text)
+import qualified Data.Text as T
 import Test.QuickCheck (getSize)
 import Test.QuickCheck.Gen (Gen (..))
 import Test.QuickCheck.GenT (MonadGen (..))
@@ -133,6 +136,19 @@ data ZapResult a = ZapResult
 instance Semigroup (ZapResult a) where
   ZapResult v a1 z1 <> ZapResult _ a2 z2 =
     ZapResult v (a1 <> a2) (z1 + z2)
+
+-- | Pretty print the annotation paths from a ZapResult
+prettyZapResult :: ZapResult a -> Text
+prettyZapResult ZapResult {..} =
+  T.unlines $
+    [ "Zapped " <> T.pack (show zrZapped) <> " decision points"
+    ]
+      <> case zrAnnotation of
+        [] -> []
+        anns -> "Annotations:" : map prettyPath anns
+  where
+    prettyPath :: NonEmpty Text -> Text
+    prettyPath path = "  - " <> T.intercalate "." (NE.toList path)
 
 zapAt :: Int -> PartialGen a -> Gen (ZapResult (PartialGen a))
 zapAt cutoffDepth (PartialGen f) =
