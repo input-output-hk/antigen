@@ -40,7 +40,16 @@ module Test.AntiGen (
 
 import Control.Monad (join)
 import System.Random (Random)
-import Test.AntiGen.Internal hiding (evalToPartial, evalPartial, countDecisionPoints, zapAt)
+import Test.AntiGen.Internal (
+  AntiGen,
+  ZapResult (..),
+  (#!),
+  (|!),
+  annotatedAnti,
+  runAntiGen,
+  withAnnotation,
+  zapAntiGen,
+ )
 import Test.QuickCheck (
   Arbitrary (..),
   Negative (..),
