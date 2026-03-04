@@ -22,7 +22,6 @@ module Test.AntiGen.Internal (
   evalPartial,
   countDecisionPoints,
   zapAt,
-  annotatedAnti,
   withAnnotation,
 ) where
 
@@ -71,10 +70,6 @@ mkAntiGen active alt =
 
 (#!) :: AntiGen a -> Text -> AntiGen a
 (#!) = flip withAnnotation
-
--- | Create an annotated negatable generator
-annotatedAnti :: Text -> Gen a -> Gen a -> AntiGen a
-annotatedAnti ann pos neg = withAnnotation ann (pos |! neg)
 
 -- | Wrap an AntiGen with an annotation
 withAnnotation :: Text -> AntiGen a -> AntiGen a

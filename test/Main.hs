@@ -31,7 +31,6 @@ import Test.AntiGen (
  )
 import Test.AntiGen.Internal (
   ZapResult (..),
-  annotatedAnti,
   countDecisionPoints,
   evalToPartial,
   prettyZapResult,
@@ -104,15 +103,13 @@ antiGenEither = do
 
 annotatedPositive :: AntiGen Int
 annotatedPositive =
-  annotatedAnti
-    "must be positive"
-    (getPositive @Int <$> arbitrary)
-    (getNonPositive <$> arbitrary)
+  withAnnotation "must be positive" $
+    (getPositive @Int <$> arbitrary) |! (getNonPositive <$> arbitrary)
 
 annotatedTuple :: AntiGen (Int, Int)
 annotatedTuple = do
-  x <- annotatedAnti "first positive" (getPositive @Int <$> arbitrary) (getNonPositive <$> arbitrary)
-  y <- annotatedAnti "second positive" (getPositive @Int <$> arbitrary) (getNonPositive <$> arbitrary)
+  x <- withAnnotation "first positive" $ (getPositive @Int <$> arbitrary) |! (getNonPositive <$> arbitrary)
+  y <- withAnnotation "second positive" $ (getPositive @Int <$> arbitrary) |! (getNonPositive <$> arbitrary)
   pure (x, y)
 
 complexAnnotations :: AntiGen (Int, Int)
@@ -328,9 +325,9 @@ utilsSpec =
       chooseBoundedIntegralTest @Word32
       chooseBoundedIntegralTest @Int
 
-annotatedAntiSpec :: Spec
-annotatedAntiSpec =
-  describe "annotatedAnti" $ do
+withAnnotationSpec :: Spec
+withAnnotationSpec =
+  describe "withAnnotation" $ do
     prop "behaves like (|!) for runAntiGen (active generator)" $ do
       x <- runAntiGen annotatedPositive
       pure $ x > 0
@@ -510,5 +507,5 @@ main = hspec $ do
           pure $ a : b
         pure $ x === [30, 31, 32]
     utilsSpec
-    annotatedAntiSpec
+    withAnnotationSpec
     prettyZapResultSpec
