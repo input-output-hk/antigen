@@ -2,15 +2,11 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE ViewPatterns #-}
 
 module Test.AntiGen.Internal (
   AntiGen,
@@ -37,17 +33,8 @@ import Test.QuickCheck.Gen (Gen (..))
 import Test.QuickCheck.GenT (MonadGen (..))
 
 data BiGen next where
-  BiGen ::
-    { bgActiveGen :: Gen t
-    , bgAlternativeGen :: Maybe (Gen t)
-    , bgContinuation :: t -> next
-    } ->
-    BiGen next
-  Annotate ::
-    { anAnnotation :: Text
-    , anContinuation :: next
-    } ->
-    BiGen next
+  BiGen :: Gen t -> Maybe (Gen t) -> (t -> next) -> BiGen next
+  Annotate :: Text -> next -> BiGen next
 
 instance Functor BiGen where
   fmap f (BiGen p n c) = BiGen p n $ f . c
@@ -112,17 +99,17 @@ evalToPartial (AntiGen f) = evalToPartialWithPath [] (fromF f)
 
 evalToPartialWithPath :: [Text] -> Free BiGen a -> Gen (PartialGen a)
 evalToPartialWithPath _ (Pure x) = pure $ pure x
-evalToPartialWithPath path (Free (Annotate {anAnnotation, anContinuation})) =
-  evalToPartialWithPath (path <> [anAnnotation]) anContinuation
-evalToPartialWithPath path (Free BiGen {..}) = MkGen $ \qcGen sz ->
+evalToPartialWithPath path (Free (Annotate ann next)) =
+  evalToPartialWithPath (path <> [ann]) next
+evalToPartialWithPath path (Free (BiGen activeGen altGen cont)) = MkGen $ \qcGen sz ->
   wrap $
     DecisionPoint
-      { dpValue = unGen bgActiveGen qcGen sz
-      , dpActiveGen = bgActiveGen
-      , dpAlternativeGen = bgAlternativeGen
+      { dpValue = unGen activeGen qcGen sz
+      , dpActiveGen = activeGen
+      , dpAlternativeGen = altGen
       , dpAnnotation = path
       , dpContinuation = \v ->
-          unGen (evalToPartialWithPath [] (bgContinuation v)) qcGen sz
+          unGen (evalToPartialWithPath [] (cont v)) qcGen sz
       }
 
 countDecisionPoints :: PartialGen a -> Int
