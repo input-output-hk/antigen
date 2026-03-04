@@ -18,7 +18,6 @@ module Test.AntiGen (
   withAnnotation,
   runAntiGen,
   zapAntiGen,
-  tryZapAntiGen,
 
   -- * AntiGen combinators
   faultyNum,
@@ -46,7 +45,6 @@ import Test.AntiGen.Internal (
   (#!),
   (|!),
   runAntiGen,
-  tryZapAntiGen,
   withAnnotation,
   zapAntiGen,
  )

@@ -16,7 +16,6 @@ module Test.AntiGen.Internal (
   (|!),
   (#!),
   zapAntiGen,
-  tryZapAntiGen,
   zapAntiGenResult,
   runAntiGen,
   evalToPartial,
@@ -231,13 +230,6 @@ evalPartial (PartialGen (F m)) = m id continue
 -- than `n`.
 zapAntiGen :: Int -> AntiGen a -> Gen a
 zapAntiGen = fmap (fmap zrValue) . zapAntiGenResult
-
--- | Like 'zapAntiGen', but returns 'Nothing' if no decision points were zapped.
-{-# DEPRECATED tryZapAntiGen "Use zapAntiGenResult and check zrZapped instead" #-}
-tryZapAntiGen :: Int -> AntiGen a -> Gen (Maybe a)
-tryZapAntiGen n ag = do
-  result <- zapAntiGenResult n ag
-  pure $ if zrZapped result > 0 then Just (zrValue result) else Nothing
 
 -- | Create a negative generator from an `AntiGen` by introducing at most
 -- `n` mistakes. If there are no decision points, it will return `Nothing`.
