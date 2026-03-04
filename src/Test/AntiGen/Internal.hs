@@ -125,7 +125,7 @@ countDecisionPoints (PartialGen (F m)) = m (const 0) $ \dp@DecisionPoint {..} ->
 data ZapResult a = ZapResult
   { zrValue :: a
   , zrAnnotation :: [NonEmpty Text]
-  , zrZapped :: Int
+  , zrZapped :: !Int
   }
   deriving (Functor)
 
