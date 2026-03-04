@@ -7,3 +7,7 @@ test-show-details: streaming
 
 program-options
   ghc-options: -Werror
+
+allow-newer:
+  aeson:QuickCheck,
+  hspec-core:QuickCheck,
