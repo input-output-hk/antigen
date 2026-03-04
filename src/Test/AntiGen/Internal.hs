@@ -147,8 +147,9 @@ prettyZapResult ZapResult {..} =
     prettyPath path = "  - " <> T.intercalate "." (NE.toList path)
 
 zapAt :: Int -> PartialGen a -> Gen (ZapResult (PartialGen a))
-zapAt cutoffDepth (PartialGen f) =
-  MkGen $ \qcGen sz ->
+zapAt cutoffDepth p@(PartialGen f)
+  | countDecisionPoints p == 0 = pure $ ZapResult p [] 0
+  | otherwise = MkGen $ \qcGen sz ->
     let
       go :: Int -> Free DecisionPoint a -> ZapResult (PartialGen a)
       go n = \case
