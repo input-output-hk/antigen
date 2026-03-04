@@ -13,6 +13,7 @@ module Test.AntiGen (
   AntiGen,
   ZapResult (..),
   (|!),
+  (#!),
   (||!),
   annotatedAnti,
   withAnnotation,

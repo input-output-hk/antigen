@@ -16,6 +16,7 @@ module Test.AntiGen.Internal (
   AntiGen,
   ZapResult (..),
   (|!),
+  (#!),
   zapAntiGen,
   zapAntiGenResult,
   runAntiGen,
@@ -75,6 +76,9 @@ mkAntiGen active alt =
 -- generator
 (|!) :: Gen a -> Gen a -> AntiGen a
 (|!) = mkAntiGen
+
+(#!) :: AntiGen a -> Text -> AntiGen a
+(#!) = flip withAnnotation
 
 -- | Create an annotated negatable generator
 annotatedAnti :: Text -> Gen a -> Gen a -> AntiGen a
