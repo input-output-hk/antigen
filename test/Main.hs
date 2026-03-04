@@ -26,7 +26,14 @@ import Test.AntiGen (
   (|!),
   (||!),
  )
-import Test.AntiGen.Internal (ZapResult (..), annotatedAnti, countDecisionPoints, evalToPartial, withAnnotation, zapAntiGenResult)
+import Test.AntiGen.Internal (
+  ZapResult (..),
+  annotatedAnti,
+  countDecisionPoints,
+  evalToPartial,
+  withAnnotation,
+  zapAntiGenResult,
+ )
 import Test.Hspec (Spec, describe, hspec, shouldBe, shouldSatisfy)
 import Test.Hspec.QuickCheck (prop)
 import Test.QuickCheck (
@@ -101,6 +108,13 @@ annotatedTuple = do
   x <- annotatedAnti "first positive" (getPositive @Int <$> arbitrary) (getNonPositive <$> arbitrary)
   y <- annotatedAnti "second positive" (getPositive @Int <$> arbitrary) (getNonPositive <$> arbitrary)
   pure (x, y)
+
+complexAnnotations :: AntiGen (Int, Int)
+complexAnnotations = do
+  withAnnotation "root" $ do
+    a <- withAnnotation "a" antiPositive
+    b <- withAnnotation "b" antiPositive
+    pure (a, b)
 
 noneOf :: [Bool] -> Property
 noneOf [] = property True
@@ -298,7 +312,10 @@ annotatedAntiSpec =
       result <- zapAntiGenResult 1 antiGenPositive
       pure $ zrAnnotation result === []
     prop "nested withAnnotation produces hierarchical path" $ do
-      let nested = withAnnotation "foo" $ withAnnotation "bar" $ (getPositive @Int <$> arbitrary) |! (getNonPositive <$> arbitrary)
+      let nested =
+            withAnnotation "foo" $
+              withAnnotation "bar" $
+                (getPositive @Int <$> arbitrary) |! (getNonPositive <$> arbitrary)
       result <- zapAntiGenResult 1 nested
       pure $
         counterexample ("annotations: " <> show (zrAnnotation result)) $
@@ -309,6 +326,14 @@ annotatedAntiSpec =
       pure $
         counterexample ("annotations: " <> show (zrAnnotation result)) $
           zrAnnotation result === [["outer"]]
+    prop "complexAnnotations: zapping both points shows path reset behavior" $ do
+      result <- zapAntiGenResult 2 complexAnnotations
+      pure $
+        counterexample ("annotations: " <> show (zrAnnotation result)) $
+          -- First decision point gets ["root", "a"], second gets ["b"] (path resets after BiGen)
+          length (zrAnnotation result) === 2
+            .&&. ["root", "a"] `elem` zrAnnotation result
+            .&&. ["root", "b"] `elem` zrAnnotation result
 
 main :: IO ()
 main = hspec $ do

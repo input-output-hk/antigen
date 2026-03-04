@@ -34,11 +34,11 @@ import Test.QuickCheck.GenT (MonadGen (..))
 
 data BiGen next where
   BiGen :: Gen t -> Maybe (Gen t) -> (t -> next) -> BiGen next
-  Annotate :: Text -> next -> BiGen next
+  Annotate :: Text -> AntiGen t -> (t -> next) -> BiGen next
 
 instance Functor BiGen where
   fmap f (BiGen p n c) = BiGen p n $ f . c
-  fmap f (Annotate ann c) = Annotate ann $ f c
+  fmap f (Annotate ann inner c) = Annotate ann inner $ f . c
 
 newtype AntiGen a = AntiGen (F BiGen a)
   deriving (Functor, Applicative, Monad, MonadFree BiGen)
@@ -46,7 +46,7 @@ newtype AntiGen a = AntiGen (F BiGen a)
 mapGen :: (forall x. Gen x -> Gen x) -> AntiGen a -> AntiGen a
 mapGen f (AntiGen (F m)) = m pure $ \case
   BiGen pos neg c -> wrap $ BiGen (f pos) (f <$> neg) c
-  Annotate ann c -> wrap $ Annotate ann c
+  Annotate ann inner c -> wrap $ Annotate ann (mapGen f inner) c
 
 instance MonadGen AntiGen where
   liftGen g = AntiGen $ F $ \p b -> b $ BiGen g Nothing p
@@ -73,7 +73,7 @@ annotatedAnti ann pos neg = withAnnotation ann (pos |! neg)
 
 -- | Wrap an AntiGen with an annotation
 withAnnotation :: Text -> AntiGen a -> AntiGen a
-withAnnotation ann inner = wrap $ Annotate ann inner
+withAnnotation ann inner = wrap $ Annotate ann inner pure
 
 data DecisionPoint next where
   DecisionPoint ::
@@ -99,8 +99,11 @@ evalToPartial (AntiGen f) = evalToPartialWithPath [] (fromF f)
 
 evalToPartialWithPath :: [Text] -> Free BiGen a -> Gen (PartialGen a)
 evalToPartialWithPath _ (Pure x) = pure $ pure x
-evalToPartialWithPath path (Free (Annotate ann next)) =
-  evalToPartialWithPath (path <> [ann]) next
+evalToPartialWithPath path (Free (Annotate ann (AntiGen inner) cont)) = MkGen $ \qcGen sz ->
+  -- Evaluate inner with extended path, then continue with original path
+  let innerPartial = unGen (evalToPartialWithPath (path <> [ann]) (fromF inner)) qcGen sz
+   in innerPartial >>= \t ->
+        unGen (evalToPartialWithPath path (cont t)) qcGen sz
 evalToPartialWithPath path (Free (BiGen activeGen altGen cont)) = MkGen $ \qcGen sz ->
   wrap $
     DecisionPoint
@@ -109,7 +112,7 @@ evalToPartialWithPath path (Free (BiGen activeGen altGen cont)) = MkGen $ \qcGen
       , dpAlternativeGen = altGen
       , dpAnnotation = path
       , dpContinuation = \v ->
-          unGen (evalToPartialWithPath [] (cont v)) qcGen sz
+          unGen (evalToPartialWithPath path (cont v)) qcGen sz
       }
 
 countDecisionPoints :: PartialGen a -> Int
