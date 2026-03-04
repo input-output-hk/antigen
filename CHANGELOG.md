@@ -1,9 +1,14 @@
 # Revision history for antigen
 
-## 0.3.2.0
+## 0.4.0.0
 
 * Add `antiSamePair`
 * Add `faultyNumRange`
+* Add hierarchical annotations with `withAnnotation` and `(#!)`
+* Add `ZapResult` with annotation tracking
+* Add `zapAntiGenResult` to get full zap metadata
+* Add `prettyZapResult` for displaying zap results
+* Remove `tryZapAntiGen` (use `zapAntiGenResult` instead)
 
 ## 0.3.1.0
 
