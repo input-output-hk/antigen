@@ -17,6 +17,7 @@ module Test.AntiGen.Internal (
   ZapResult (..),
   (|!),
   zapAntiGen,
+  zapAntiGenResult,
   runAntiGen,
   evalToPartial,
   evalPartial,
@@ -127,10 +128,10 @@ zapAt cutoffDepth (PartialGen f) =
       go n = \case
         Pure x -> ZapResult (pure x) mempty 0
         Free dp@DecisionPoint {..} ->
-          let ZapResult _ ann zapped = go n $ continue dp
-           in case dpAlternativeGen of
-                Nothing ->
-                  ZapResult
+          case dpAlternativeGen of
+            Nothing ->
+              let ZapResult _ ann zapped = go n $ continue dp
+               in ZapResult
                     { zrValue =
                         wrap $
                           DecisionPoint
@@ -140,9 +141,10 @@ zapAt cutoffDepth (PartialGen f) =
                     , zrAnnotation = ann
                     , zrZapped = zapped
                     }
-                Just altGen
-                  | n == 0 ->
-                      ZapResult
+            Just altGen
+              | n == 0 ->
+                  let ZapResult _ _ zapped = go (pred n) $ continue dp
+                   in ZapResult
                         { zrValue =
                             let newValue = unGen altGen qcGen sz
                              in wrap $
@@ -156,8 +158,9 @@ zapAt cutoffDepth (PartialGen f) =
                         , zrAnnotation = foldMap (: []) dpAnnotation
                         , zrZapped = succ zapped
                         }
-                  | otherwise ->
-                      ZapResult
+              | otherwise ->
+                  let ZapResult _ ann zapped = go (pred n) $ continue dp
+                   in ZapResult
                         { zrValue =
                             wrap $
                               DecisionPoint

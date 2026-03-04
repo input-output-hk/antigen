@@ -1,4 +1,5 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
@@ -25,7 +26,7 @@ import Test.AntiGen (
   (|!),
   (||!),
  )
-import Test.AntiGen.Internal (countDecisionPoints, evalToPartial)
+import Test.AntiGen.Internal (ZapResult (..), annotatedAnti, countDecisionPoints, evalToPartial, zapAntiGenResult)
 import Test.Hspec (Spec, describe, hspec, shouldBe, shouldSatisfy)
 import Test.Hspec.QuickCheck (prop)
 import Test.QuickCheck (
@@ -87,6 +88,19 @@ antiGenEither = do
         l <- antiGenSmall
         replicateM l $ pure True |! pure False
     ]
+
+annotatedPositive :: AntiGen Int
+annotatedPositive =
+  annotatedAnti
+    "must be positive"
+    (getPositive @Int <$> arbitrary)
+    (getNonPositive <$> arbitrary)
+
+annotatedTuple :: AntiGen (Int, Int)
+annotatedTuple = do
+  x <- annotatedAnti "first positive" (getPositive @Int <$> arbitrary) (getNonPositive <$> arbitrary)
+  y <- annotatedAnti "second positive" (getPositive @Int <$> arbitrary) (getNonPositive <$> arbitrary)
+  pure (x, y)
 
 noneOf :: [Bool] -> Property
 noneOf [] = property True
@@ -251,6 +265,39 @@ utilsSpec =
       chooseBoundedIntegralTest @Word32
       chooseBoundedIntegralTest @Int
 
+annotatedAntiSpec :: Spec
+annotatedAntiSpec =
+  describe "annotatedAnti" $ do
+    prop "behaves like (|!) for runAntiGen (active generator)" $ do
+      x <- runAntiGen annotatedPositive
+      pure $ x > 0
+    prop "behaves like (|!) for zapAntiGen (alternative generator)" $ do
+      x <- zapAntiGen 1 annotatedPositive
+      pure $ x <= 0
+    prop "annotation is captured in ZapResult when zapped" $ do
+      result <- zapAntiGenResult 1 annotatedPositive
+      pure $
+        counterexample ("annotations: " <> show (zrAnnotation result)) $
+          zrAnnotation result === ["must be positive"]
+    prop "no annotation in ZapResult when not zapped (n=0)" $ do
+      result <- zapAntiGenResult 0 annotatedPositive
+      pure $ zrAnnotation result === []
+    prop "multiple annotations collected when zapping multiple points" $ do
+      result <- zapAntiGenResult 2 annotatedTuple
+      pure $
+        counterexample ("annotations: " <> show (zrAnnotation result)) $
+          length (zrAnnotation result) === 2
+            .&&. "first positive" `elem` zrAnnotation result
+            .&&. "second positive" `elem` zrAnnotation result
+    prop "single zap of composed annotated generator gets one annotation" $ do
+      result <- zapAntiGenResult 1 annotatedTuple
+      pure $
+        counterexample ("annotations: " <> show (zrAnnotation result)) $
+          length (zrAnnotation result) === 1
+    prop "non-annotated (|!) produces empty annotation list" $ do
+      result <- zapAntiGenResult 1 antiGenPositive
+      pure $ zrAnnotation result === []
+
 main :: IO ()
 main = hspec $ do
   describe "AntiGen" $ do
@@ -292,3 +339,4 @@ main = hspec $ do
           pure $ a : b
         pure $ x === [30, 31, 32]
     utilsSpec
+    annotatedAntiSpec
