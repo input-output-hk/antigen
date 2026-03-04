@@ -209,7 +209,9 @@ zapAt cutoffDepth p@(PartialGen f)
       go cutoffDepth $ fromF f
 
 zap :: PartialGen a -> Gen (ZapResult (PartialGen a))
-zap p = (`zapAt` p) =<< choose (0, countDecisionPoints p - 1)
+zap p
+  | countDecisionPoints p == 0 = pure $ ZapResult p [] 0
+  | otherwise = (`zapAt` p) =<< choose (0, countDecisionPoints p - 1)
 
 zapNTimes :: Int -> PartialGen a -> Gen (ZapResult a)
 zapNTimes n x
