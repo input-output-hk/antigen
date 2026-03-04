@@ -177,21 +177,20 @@ zapAt cutoffDepth p@(PartialGen f)
                     }
             Just altGen
               | n == 0 ->
-                  let ZapResult _ _ zapped = go (pred n) $ continue dp
-                   in ZapResult
-                        { zrValue =
-                            let newValue = unGen altGen qcGen sz
-                             in wrap $
-                                  DecisionPoint
-                                    { dpValue = newValue
-                                    , dpActiveGen = altGen
-                                    , dpAlternativeGen = Nothing
-                                    , dpContinuation = zrValue . go (pred n) . dpContinuation
-                                    , ..
-                                    }
-                        , zrAnnotation = maybe [] (: []) (NE.nonEmpty dpAnnotation)
-                        , zrZapped = succ zapped
-                        }
+                  ZapResult
+                    { zrValue =
+                        let newValue = unGen altGen qcGen sz
+                         in wrap $
+                              DecisionPoint
+                                { dpValue = newValue
+                                , dpActiveGen = altGen
+                                , dpAlternativeGen = Nothing
+                                , dpContinuation = zrValue . go (pred n) . dpContinuation
+                                , ..
+                                }
+                    , zrAnnotation = maybe [] (: []) (NE.nonEmpty dpAnnotation)
+                    , zrZapped = 1
+                    }
               | otherwise ->
                   let ZapResult _ ann zapped = go (pred n) $ continue dp
                    in ZapResult
