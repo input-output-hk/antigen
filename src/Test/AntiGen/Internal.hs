@@ -101,20 +101,28 @@ evalToPartial (AntiGen f) = evalToPartialWithPath [] (fromF f)
 evalToPartialWithPath :: [Text] -> Free BiGen a -> Gen (PartialGen a)
 evalToPartialWithPath _ (Pure x) = pure $ pure x
 evalToPartialWithPath path (Free (Annotate ann (AntiGen inner) cont)) = MkGen $ \qcGen sz ->
-  -- Evaluate inner with extended path, then continue with original path
-  let innerPartial = unGen (evalToPartialWithPath (path <> [ann]) (fromF inner)) qcGen sz
+  -- Evaluate inner with extended path, then continue with original path,
+  -- using split generators so randomness is threaded correctly.
+  let (qcGenInner, qcGenCont) = split qcGen
+      innerPartial =
+        unGen
+          (evalToPartialWithPath (path <> [ann]) (fromF inner))
+          qcGenInner
+          sz
    in innerPartial >>= \t ->
-        unGen (evalToPartialWithPath path (cont t)) qcGen sz
+        unGen (evalToPartialWithPath path (cont t)) qcGenCont sz
 evalToPartialWithPath path (Free (BiGen activeGen altGen cont)) = MkGen $ \qcGen sz ->
-  wrap $
-    DecisionPoint
-      { dpValue = unGen activeGen qcGen sz
-      , dpActiveGen = activeGen
-      , dpAlternativeGen = altGen
-      , dpAnnotation = path
-      , dpContinuation = \v ->
-          unGen (evalToPartialWithPath path (cont v)) qcGen sz
-      }
+  let (qcGenValue, qcGenCont) = split qcGen
+      value = unGen activeGen qcGenValue sz
+   in wrap $
+        DecisionPoint
+          { dpValue = value
+          , dpActiveGen = activeGen
+          , dpAlternativeGen = altGen
+          , dpAnnotation = path
+          , dpContinuation = \v ->
+              unGen (evalToPartialWithPath path (cont v)) qcGenCont sz
+          }
 
 countDecisionPoints :: PartialGen a -> Int
 countDecisionPoints (PartialGen (F m)) = m (const 0) $ \dp@DecisionPoint {..} ->
