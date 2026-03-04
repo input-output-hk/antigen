@@ -15,6 +15,7 @@ module Test.AntiGen (
   (|!),
   (||!),
   annotatedAnti,
+  withAnnotation,
   runAntiGen,
   zapAntiGen,
 
@@ -38,7 +39,7 @@ module Test.AntiGen (
 
 import Control.Monad (join)
 import System.Random (Random)
-import Test.AntiGen.Internal
+import Test.AntiGen.Internal hiding (evalToPartial, evalPartial, countDecisionPoints, zapAt)
 import Test.QuickCheck (
   Arbitrary (..),
   Negative (..),

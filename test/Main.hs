@@ -26,7 +26,7 @@ import Test.AntiGen (
   (|!),
   (||!),
  )
-import Test.AntiGen.Internal (ZapResult (..), annotatedAnti, countDecisionPoints, evalToPartial, zapAntiGenResult)
+import Test.AntiGen.Internal (ZapResult (..), annotatedAnti, countDecisionPoints, evalToPartial, withAnnotation, zapAntiGenResult)
 import Test.Hspec (Spec, describe, hspec, shouldBe, shouldSatisfy)
 import Test.Hspec.QuickCheck (prop)
 import Test.QuickCheck (
@@ -278,7 +278,7 @@ annotatedAntiSpec =
       result <- zapAntiGenResult 1 annotatedPositive
       pure $
         counterexample ("annotations: " <> show (zrAnnotation result)) $
-          zrAnnotation result === ["must be positive"]
+          zrAnnotation result === [["must be positive"]]
     prop "no annotation in ZapResult when not zapped (n=0)" $ do
       result <- zapAntiGenResult 0 annotatedPositive
       pure $ zrAnnotation result === []
@@ -287,8 +287,8 @@ annotatedAntiSpec =
       pure $
         counterexample ("annotations: " <> show (zrAnnotation result)) $
           length (zrAnnotation result) === 2
-            .&&. "first positive" `elem` zrAnnotation result
-            .&&. "second positive" `elem` zrAnnotation result
+            .&&. ["first positive"] `elem` zrAnnotation result
+            .&&. ["second positive"] `elem` zrAnnotation result
     prop "single zap of composed annotated generator gets one annotation" $ do
       result <- zapAntiGenResult 1 annotatedTuple
       pure $
@@ -297,6 +297,18 @@ annotatedAntiSpec =
     prop "non-annotated (|!) produces empty annotation list" $ do
       result <- zapAntiGenResult 1 antiGenPositive
       pure $ zrAnnotation result === []
+    prop "nested withAnnotation produces hierarchical path" $ do
+      let nested = withAnnotation "foo" $ withAnnotation "bar" $ (getPositive @Int <$> arbitrary) |! (getNonPositive <$> arbitrary)
+      result <- zapAntiGenResult 1 nested
+      pure $
+        counterexample ("annotations: " <> show (zrAnnotation result)) $
+          zrAnnotation result === [["foo", "bar"]]
+    prop "withAnnotation on unannotated produces single-element path" $ do
+      let annotated = withAnnotation "outer" $ (getPositive @Int <$> arbitrary) |! (getNonPositive <$> arbitrary)
+      result <- zapAntiGenResult 1 annotated
+      pure $
+        counterexample ("annotations: " <> show (zrAnnotation result)) $
+          zrAnnotation result === [["outer"]]
 
 main :: IO ()
 main = hspec $ do
