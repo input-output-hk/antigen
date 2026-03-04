@@ -18,6 +18,8 @@ module Test.AntiGen (
   withAnnotation,
   runAntiGen,
   zapAntiGen,
+  zapAntiGenResult,
+  prettyZapResult,
 
   -- * AntiGen combinators
   faultyNum,
@@ -44,9 +46,11 @@ import Test.AntiGen.Internal (
   ZapResult (..),
   (#!),
   (|!),
+  prettyZapResult,
   runAntiGen,
   withAnnotation,
   zapAntiGen,
+  zapAntiGenResult,
  )
 import Test.QuickCheck (
   Arbitrary (..),
