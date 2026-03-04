@@ -27,6 +27,8 @@ module Test.AntiGen.Internal (
 import Control.Monad ((<=<))
 import Control.Monad.Free (Free (..))
 import Control.Monad.Free.Church (F (..), MonadFree (..), fromF)
+import Data.List.NonEmpty (NonEmpty)
+import qualified Data.List.NonEmpty as NE
 import Data.Text (Text)
 import Test.QuickCheck (getSize)
 import Test.QuickCheck.Gen (Gen (..))
@@ -123,7 +125,7 @@ countDecisionPoints (PartialGen (F m)) = m (const 0) $ \dp@DecisionPoint {..} ->
 
 data ZapResult a = ZapResult
   { zrValue :: a
-  , zrAnnotation :: [[Text]]
+  , zrAnnotation :: [NonEmpty Text]
   , zrZapped :: Int
   }
   deriving (Functor)
@@ -167,7 +169,7 @@ zapAt cutoffDepth (PartialGen f) =
                                     , dpContinuation = zrValue . go (pred n) . dpContinuation
                                     , ..
                                     }
-                        , zrAnnotation = if null dpAnnotation then [] else [dpAnnotation]
+                        , zrAnnotation = maybe [] (: []) (NE.nonEmpty dpAnnotation)
                         , zrZapped = succ zapped
                         }
               | otherwise ->
