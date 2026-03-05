@@ -74,3 +74,4 @@ benchmark bench
     deepseq,
     QuickCheck,
     quickcheck-transformer,
+    text,
