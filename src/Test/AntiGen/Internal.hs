@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
@@ -34,11 +35,20 @@ import Data.Sequence (Seq (..))
 import qualified Data.Sequence as Seq
 import Data.Text (Text)
 import qualified Data.Text as T
+#if MIN_VERSION_QuickCheck(2,18,0)
 import System.Random (SplitGen (..))
+#else
+import System.Random (RandomGen (split))
+#endif
 import Test.QuickCheck (getSize)
 import Test.QuickCheck.Gen (Gen (..))
 import Test.QuickCheck.Random (QCGen)
 import Test.QuickCheck.GenT (MonadGen (..))
+
+#if !MIN_VERSION_QuickCheck(2,18,0)
+splitGen :: RandomGen g => g -> (g, g)
+splitGen = split
+#endif
 
 data BiGen next where
   BiGen :: Gen t -> Maybe (Gen t) -> (t -> next) -> BiGen next
