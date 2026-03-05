@@ -129,10 +129,10 @@ evalToPartial (AntiGen (F m)) = MkGen $ \qcGen sz ->
               , dpAnnotation = path
               , dpContinuation = \v -> cont v path qcGenCont sz
               }
-    kf (Annotate ann (AntiGen (F inner)) cont) path qcGen sz =
+    kf (Annotate ann (AntiGen (F inner)) cont) path qcGen sz = do
       let (qcGenInner, qcGenCont) = splitGen qcGen
-          innerPartial = inner kp kf (path <> [ann]) qcGenInner sz
-       in innerPartial >>= \t -> cont t path qcGenCont sz
+      t <- inner kp kf (path <> [ann]) qcGenInner sz
+      cont t path qcGenCont sz
 
 countDecisionPoints :: PartialGen a -> Int
 countDecisionPoints (PartialGen (F m)) = m (const 0) $ \dp@DecisionPoint {..} ->
