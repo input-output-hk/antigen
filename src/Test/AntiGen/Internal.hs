@@ -242,7 +242,7 @@ zapAntiGen :: Int -> AntiGen a -> Gen a
 zapAntiGen = fmap (fmap zrValue) . zapAntiGenResult
 
 -- | Create a negative generator from an `AntiGen` by introducing at most
--- `n` mistakes. If there are no decision points, it will return `Nothing`.
+-- `n` mistakes.
 zapAntiGenResult :: Int -> AntiGen a -> Gen (ZapResult a)
 zapAntiGenResult n = zapNTimes n <=< evalToPartial
 
