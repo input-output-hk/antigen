@@ -10,3 +10,4 @@ program-options
 
 allow-newer:
   aeson:QuickCheck,
+  hspec-core:QuickCheck,

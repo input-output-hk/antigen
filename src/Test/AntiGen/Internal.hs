@@ -27,7 +27,7 @@ module Test.AntiGen.Internal (
 
 import Control.Monad ((<=<))
 import Control.Monad.Free (Free (..))
-import Control.Monad.Free.Church (F (..), MonadFree (..), fromF, toF)
+import Control.Monad.Free.Church (F (..), MonadFree (..), fromF)
 import Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import Data.Text (Text)
@@ -35,6 +35,7 @@ import qualified Data.Text as T
 import System.Random (SplitGen (..))
 import Test.QuickCheck (getSize)
 import Test.QuickCheck.Gen (Gen (..))
+import Test.QuickCheck.Random (QCGen)
 import Test.QuickCheck.GenT (MonadGen (..))
 
 data BiGen next where
@@ -133,7 +134,7 @@ countDecisionPoints (PartialGen (F m)) = m (const 0) $ \dp@DecisionPoint {..} ->
 data ZapResult a = ZapResult
   { zrValue :: a
   , zrAnnotation :: [NonEmpty Text]
-  , zrZapped :: !Int
+  , zrZapped :: Int
   }
   deriving (Functor)
 
@@ -155,62 +156,59 @@ prettyZapResult ZapResult {..} =
     prettyPath path = "  - " <> T.intercalate "." (NE.toList path)
 
 zapAt :: Int -> PartialGen a -> Gen (ZapResult (PartialGen a))
-zapAt cutoffDepth p@(PartialGen f)
-  | countDecisionPoints p == 0 = pure $ ZapResult p [] 0
-  | otherwise = MkGen $ \qcGen sz ->
-      let
-        go :: Int -> Free DecisionPoint a -> ZapResult (PartialGen a)
-        go n = \case
-          Pure x -> ZapResult (pure x) mempty 0
-          Free dp@DecisionPoint {..} ->
-            case dpAlternativeGen of
-              Nothing ->
-                let ZapResult _ ann zapped = go n $ continue dp
-                 in ZapResult
-                      { zrValue =
-                          wrap $
-                            DecisionPoint
-                              { dpContinuation = zrValue . go n . dpContinuation
-                              , ..
-                              }
-                      , zrAnnotation = ann
-                      , zrZapped = zapped
-                      }
-              Just altGen
-                | n == 0 ->
-                    ZapResult
-                      { zrValue =
-                          let newValue = unGen altGen qcGen sz
-                           in wrap $
-                                DecisionPoint
-                                  { dpValue = newValue
-                                  , dpActiveGen = altGen
-                                  , dpAlternativeGen = Nothing
-                                  , dpContinuation = PartialGen . toF . dpContinuation
-                                  , ..
-                                  }
-                      , zrAnnotation = maybe [] (: []) (NE.nonEmpty dpAnnotation)
-                      , zrZapped = 1
-                      }
-                | otherwise ->
-                    let ZapResult _ ann zapped = go (pred n) $ continue dp
-                     in ZapResult
-                          { zrValue =
-                              wrap $
-                                DecisionPoint
-                                  { dpContinuation = zrValue . go (pred n) . dpContinuation
-                                  , ..
-                                  }
-                          , zrAnnotation = ann
-                          , zrZapped = zapped
-                          }
-       in
-        go cutoffDepth $ fromF f
+zapAt cutoffDepth (PartialGen (F m)) = MkGen $ \qcGen sz ->
+  m kp (kf qcGen sz) cutoffDepth
+  where
+    kp :: a -> Int -> ZapResult (PartialGen a)
+    kp x _ = ZapResult (pure x) mempty 0
+
+    kf ::
+      QCGen ->
+      Int ->
+      DecisionPoint (Int -> ZapResult (PartialGen a)) ->
+      Int ->
+      ZapResult (PartialGen a)
+    kf qcGen sz DecisionPoint {..} n =
+      case dpAlternativeGen of
+        Just altGen | n == 0 ->
+          -- Zap here, then go negative
+          ZapResult
+            { zrValue =
+                let newValue = unGen altGen qcGen sz
+                 in wrap $
+                      DecisionPoint
+                        { dpValue = newValue
+                        , dpActiveGen = altGen
+                        , dpAlternativeGen = Nothing
+                        , dpContinuation = \v -> zrValue (dpContinuation v (-1))
+                        , ..
+                        }
+            , zrAnnotation = maybe [] (: []) (NE.nonEmpty dpAnnotation)
+            , zrZapped = 1
+            }
+        _ ->
+          -- Preserve tree structure
+          let n' = case dpAlternativeGen of
+                Just _ | n > 0 -> pred n
+                _ -> n
+              restResult = dpContinuation dpValue n'
+           in ZapResult
+                { zrValue =
+                    wrap $
+                      DecisionPoint
+                        { dpContinuation = \v -> zrValue (dpContinuation v n')
+                        , ..
+                        }
+                , zrAnnotation = zrAnnotation restResult
+                , zrZapped = zrZapped restResult
+                }
 
 zap :: PartialGen a -> Gen (ZapResult (PartialGen a))
-zap p
-  | countDecisionPoints p == 0 = pure $ ZapResult p [] 0
-  | otherwise = (`zapAt` p) =<< choose (0, countDecisionPoints p - 1)
+zap p =
+  let n = countDecisionPoints p
+   in if n == 0
+        then pure $ ZapResult p [] 0
+        else (`zapAt` p) =<< choose (0, n - 1)
 
 zapNTimes :: Int -> PartialGen a -> Gen (ZapResult a)
 zapNTimes n x

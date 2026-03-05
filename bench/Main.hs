@@ -1,9 +1,11 @@
 {-# LANGUAGE NumericUnderscores #-}
+{-# LANGUAGE RecordWildCards #-}
 
 module Main (main) where
 
-import Criterion.Main (Benchmarkable, bench, defaultMain, nfIO)
-import Test.AntiGen.Internal (AntiGen, evalPartial, evalToPartial, zapAt, zrValue, (|!))
+import Control.DeepSeq (deepseq)
+import Criterion.Main (Benchmarkable, bench, bgroup, defaultMain, nfIO)
+import Test.AntiGen.Internal (AntiGen, ZapResult (..), evalPartial, evalToPartial, zapAt, (|!))
 import Test.QuickCheck (Arbitrary (..), generate)
 import Test.QuickCheck.GenT (MonadGen (..))
 
@@ -19,16 +21,36 @@ bindList n
           pure $ y : x : xs
         [] -> error "Got empty list"
 
-bindListZap :: Int -> Int -> Benchmarkable
-bindListZap len i =
+-- Only force the value
+bindListZapValue :: Int -> Int -> Benchmarkable
+bindListZapValue len i =
   nfIO . generate . variant (12345 :: Int) . fmap (evalPartial . zrValue) $
     zapAt i =<< evalToPartial (bindList len)
+
+-- Force value, annotation, and zapped count
+bindListZapAll :: Int -> Int -> Benchmarkable
+bindListZapAll len i =
+  nfIO . generate . variant (12345 :: Int) . fmap forceAll $
+    zapAt i =<< evalToPartial (bindList len)
+  where
+    forceAll ZapResult {..} =
+      zrAnnotation `deepseq` (evalPartial zrValue, zrZapped)
 
 main :: IO ()
 main =
   defaultMain
-    [ bench "bindList 10_000 zap at 0" $ bindListZap 10_000 0
-    , bench "bindList 10_000 zap at 9_000" $ bindListZap 10_000 9_000
-    , bench "bindList 1_000_000 zap at 0" $ bindListZap 1_000_000 0
-    , bench "bindList 1_000_000 zap at 900_000" $ bindListZap 1_000_000 900_000
+    [ bgroup
+        "value only"
+        [ bench "10_000 zap at 0" $ bindListZapValue 10_000 0
+        , bench "10_000 zap at 9_000" $ bindListZapValue 10_000 9_000
+        , bench "1_000_000 zap at 0" $ bindListZapValue 1_000_000 0
+        , bench "1_000_000 zap at 900_000" $ bindListZapValue 1_000_000 900_000
+        ]
+    , bgroup
+        "force all"
+        [ bench "10_000 zap at 0" $ bindListZapAll 10_000 0
+        , bench "10_000 zap at 9_000" $ bindListZapAll 10_000 9_000
+        , bench "1_000_000 zap at 0" $ bindListZapAll 1_000_000 0
+        , bench "1_000_000 zap at 900_000" $ bindListZapAll 1_000_000 900_000
+        ]
     ]

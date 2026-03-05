@@ -70,5 +70,6 @@ benchmark bench
     antigen,
     base,
     criterion,
+    deepseq,
     QuickCheck,
     quickcheck-transformer,
