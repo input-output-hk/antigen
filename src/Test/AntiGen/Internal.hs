@@ -26,8 +26,7 @@ module Test.AntiGen.Internal (
 ) where
 
 import Control.Monad ((<=<))
-import Control.Monad.Free (Free (..))
-import Control.Monad.Free.Church (F (..), MonadFree (..), fromF)
+import Control.Monad.Free.Church (F (..), MonadFree (..))
 import Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import Data.Text (Text)
@@ -97,33 +96,33 @@ newtype PartialGen a = PartialGen (F DecisionPoint a)
   deriving (Functor, Applicative, Monad, MonadFree DecisionPoint)
 
 evalToPartial :: AntiGen a -> Gen (PartialGen a)
-evalToPartial (AntiGen f) = evalToPartialWithPath [] (fromF f)
+evalToPartial (AntiGen (F m)) = MkGen $ \qcGen sz ->
+  m kp kf [] qcGen sz
+  where
+    kp :: a -> [Text] -> QCGen -> Int -> PartialGen a
+    kp x _ _ _ = pure x
 
-evalToPartialWithPath :: [Text] -> Free BiGen a -> Gen (PartialGen a)
-evalToPartialWithPath _ (Pure x) = pure $ pure x
-evalToPartialWithPath path (Free (Annotate ann (AntiGen inner) cont)) = MkGen $ \qcGen sz ->
-  -- Evaluate inner with extended path, then continue with original path,
-  -- using split generators so randomness is threaded correctly.
-  let (qcGenInner, qcGenCont) = splitGen qcGen
-      innerPartial =
-        unGen
-          (evalToPartialWithPath (path <> [ann]) (fromF inner))
-          qcGenInner
-          sz
-   in innerPartial >>= \t ->
-        unGen (evalToPartialWithPath path (cont t)) qcGenCont sz
-evalToPartialWithPath path (Free (BiGen activeGen altGen cont)) = MkGen $ \qcGen sz ->
-  let (qcGenValue, qcGenCont) = splitGen qcGen
-      value = unGen activeGen qcGenValue sz
-   in wrap $
-        DecisionPoint
-          { dpValue = value
-          , dpActiveGen = activeGen
-          , dpAlternativeGen = altGen
-          , dpAnnotation = path
-          , dpContinuation = \v ->
-              unGen (evalToPartialWithPath path (cont v)) qcGenCont sz
-          }
+    kf ::
+      BiGen ([Text] -> QCGen -> Int -> PartialGen a) ->
+      [Text] ->
+      QCGen ->
+      Int ->
+      PartialGen a
+    kf (BiGen activeGen altGen cont) path qcGen sz =
+      let (qcGenValue, qcGenCont) = splitGen qcGen
+          value = unGen activeGen qcGenValue sz
+       in wrap $
+            DecisionPoint
+              { dpValue = value
+              , dpActiveGen = activeGen
+              , dpAlternativeGen = altGen
+              , dpAnnotation = path
+              , dpContinuation = \v -> cont v path qcGenCont sz
+              }
+    kf (Annotate ann (AntiGen (F inner)) cont) path qcGen sz =
+      let (qcGenInner, qcGenCont) = splitGen qcGen
+          innerPartial = inner kp kf (path <> [ann]) qcGenInner sz
+       in innerPartial >>= \t -> cont t path qcGenCont sz
 
 countDecisionPoints :: PartialGen a -> Int
 countDecisionPoints (PartialGen (F m)) = m (const 0) $ \dp@DecisionPoint {..} ->
