@@ -31,8 +31,9 @@ library
     exposed-modules:  
       Test.AntiGen
       Test.AntiGen.Internal
-    build-depends:    
+    build-depends:
       base >=4.18 && <5,
+      containers,
       QuickCheck >= 2.18,
       free >= 5.2 && < 5.3,
       mtl >= 2.3.1 && < 2.4,
