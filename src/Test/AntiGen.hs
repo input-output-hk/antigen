@@ -184,3 +184,5 @@ antiDistinctPair =
 -- | Create an `AntiGen` from a positive and a negative `AntiGen` generator
 (||!) :: AntiGen a -> AntiGen a -> AntiGen a
 a ||! b = join $ pure a |! pure b
+
+infixl 6 ||!
