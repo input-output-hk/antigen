@@ -27,8 +27,8 @@ module Test.AntiGen.Internal (
 ) where
 
 import Control.Monad ((<=<))
-import Data.Foldable (toList)
 import Control.Monad.Free.Church (F (..), MonadFree (..))
+import Data.Foldable (toList)
 import Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import Data.Sequence (Seq (..))
@@ -42,8 +42,8 @@ import System.Random (RandomGen (split))
 #endif
 import Test.QuickCheck (getSize)
 import Test.QuickCheck.Gen (Gen (..))
-import Test.QuickCheck.Random (QCGen)
 import Test.QuickCheck.GenT (MonadGen (..))
+import Test.QuickCheck.Random (QCGen)
 
 #if !MIN_VERSION_QuickCheck(2,18,0)
 splitGen :: RandomGen g => g -> (g, g)
@@ -192,22 +192,23 @@ zapAt cutoffDepth (PartialGen (F m)) = MkGen $ \qcGen sz ->
       ZapResult (PartialGen a)
     kf qcGen sz DecisionPoint {..} n =
       case dpAlternativeGen of
-        Just altGen | n == 0 ->
-          -- Zap here, then go negative
-          ZapResult
-            { zrValue =
-                let newValue = unGen altGen qcGen sz
-                 in wrap $
-                      DecisionPoint
-                        { dpValue = newValue
-                        , dpActiveGen = altGen
-                        , dpAlternativeGen = Nothing
-                        , dpContinuation = \v -> zrValue (dpContinuation v (-1))
-                        , ..
-                        }
-            , zrAnnotation = toList (NE.nonEmpty (toList dpAnnotation))
-            , zrZapped = 1
-            }
+        Just altGen
+          | n == 0 ->
+              -- Zap here, then go negative
+              ZapResult
+                { zrValue =
+                    let newValue = unGen altGen qcGen sz
+                     in wrap $
+                          DecisionPoint
+                            { dpValue = newValue
+                            , dpActiveGen = altGen
+                            , dpAlternativeGen = Nothing
+                            , dpContinuation = \v -> zrValue (dpContinuation v (-1))
+                            , ..
+                            }
+                , zrAnnotation = toList (NE.nonEmpty (toList dpAnnotation))
+                , zrZapped = 1
+                }
         _ ->
           -- Preserve tree structure
           let n' = case dpAlternativeGen of
@@ -249,7 +250,7 @@ evalPartial (PartialGen (F m)) = m id continue
 -- the `AntiGen` is lower than `n`, then the number of negations will be less
 -- than `n`.
 zapAntiGen :: Int -> AntiGen a -> Gen a
-zapAntiGen = fmap (fmap zrValue) . zapAntiGenResult
+zapAntiGen n = fmap zrValue . zapAntiGenResult n
 
 -- | Create a negative generator from an `AntiGen` by introducing at most
 -- `n` mistakes.
