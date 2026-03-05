@@ -431,7 +431,7 @@ golden name actual = do
       , encodePretty = id
       , writeToFile = writeFile
       , readFromFile = readFile
-      , goldenFile = dataDir </> ".golden" </> name </> "golden"
+      , goldenFile = dataDir </> ".golden" </> name ++ ".golden"
       , actualFile = Nothing
       , failFirstTime = False
       }
