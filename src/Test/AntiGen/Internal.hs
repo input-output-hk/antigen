@@ -195,7 +195,7 @@ zapAt cutoffDepth (PartialGen (F m)) = MkGen $ \qcGen sz ->
                         , dpContinuation = \v -> zrValue (dpContinuation v (-1))
                         , ..
                         }
-            , zrAnnotation = maybe [] (: []) (NE.nonEmpty (toList dpAnnotation))
+            , zrAnnotation = toList (NE.nonEmpty (toList dpAnnotation))
             , zrZapped = 1
             }
         _ ->
