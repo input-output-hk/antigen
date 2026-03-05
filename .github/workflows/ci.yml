@@ -9,13 +9,16 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        ghc-version: ['9.6.7', '9.8.4', '9.10.2', '9.12.2']
     steps:
       - uses: actions/checkout@v4
 
       - name: Setup Haskell
         uses: haskell-actions/setup@v2
         with:
-          ghc-version: '9.10.3'
+          ghc-version: ${{ matrix.ghc-version }}
           cabal-version: '3.12'
 
       - name: Cache cabal packages
@@ -25,9 +28,9 @@ jobs:
             ~/.cabal/packages
             ~/.cabal/store
             dist-newstyle
-          key: ${{ runner.os }}-cabal-${{ hashFiles('**/*.cabal') }}
+          key: ${{ runner.os }}-ghc-${{ matrix.ghc-version }}-cabal-${{ hashFiles('**/*.cabal') }}
           restore-keys: |
-            ${{ runner.os }}-cabal-
+            ${{ runner.os }}-ghc-${{ matrix.ghc-version }}-cabal-
 
       - name: Build
         run: cabal build all
