@@ -69,8 +69,18 @@ mkAntiGen active alt =
 (|!) :: Gen a -> Gen a -> AntiGen a
 (|!) = mkAntiGen
 
+infixl 6 |!
+
+-- | Postfix annotation operator. Annotates an 'AntiGen' with a label that
+-- will be included in 'ZapResult' when this generator is zapped.
+--
+-- @
+-- myGen = positive |! negative #! "sign"
+-- @
 (#!) :: AntiGen a -> Text -> AntiGen a
 (#!) = flip withAnnotation
+
+infixl 5 #!
 
 -- | Wrap an AntiGen with an annotation
 withAnnotation :: Text -> AntiGen a -> AntiGen a
