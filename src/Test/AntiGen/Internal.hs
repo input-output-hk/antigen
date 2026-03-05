@@ -201,8 +201,8 @@ zapAt cutoffDepth (PartialGen (F m)) = MkGen $ \qcGen sz ->
         _ ->
           -- Preserve tree structure
           let n' = case dpAlternativeGen of
-                Just _ | n > 0 -> pred n
-                _ -> n
+                Just _ -> pred n
+                Nothing -> n
               restResult = dpContinuation dpValue n'
            in ZapResult
                 { zrValue =
