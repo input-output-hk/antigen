@@ -26,9 +26,12 @@ module Test.AntiGen.Internal (
 ) where
 
 import Control.Monad ((<=<))
+import Data.Foldable (toList)
 import Control.Monad.Free.Church (F (..), MonadFree (..))
 import Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
+import Data.Sequence (Seq (..))
+import qualified Data.Sequence as Seq
 import Data.Text (Text)
 import qualified Data.Text as T
 import System.Random (SplitGen (..))
@@ -69,8 +72,18 @@ mkAntiGen active alt =
 (|!) :: Gen a -> Gen a -> AntiGen a
 (|!) = mkAntiGen
 
+infixl 6 |!
+
+-- | Postfix annotation operator. Annotates an 'AntiGen' with a label that
+-- will be included in 'ZapResult' when this generator is zapped.
+--
+-- @
+-- myGen = positive |! negative #! "sign"
+-- @
 (#!) :: AntiGen a -> Text -> AntiGen a
 (#!) = flip withAnnotation
+
+infixl 5 #!
 
 -- | Wrap an AntiGen with an annotation
 withAnnotation :: Text -> AntiGen a -> AntiGen a
@@ -81,7 +94,7 @@ data DecisionPoint next where
     { dpValue :: t
     , dpActiveGen :: Gen t
     , dpAlternativeGen :: Maybe (Gen t)
-    , dpAnnotation :: [Text]
+    , dpAnnotation :: Seq Text
     , dpContinuation :: t -> next
     } ->
     DecisionPoint next
@@ -97,14 +110,14 @@ newtype PartialGen a = PartialGen (F DecisionPoint a)
 
 evalToPartial :: AntiGen a -> Gen (PartialGen a)
 evalToPartial (AntiGen (F m)) = MkGen $ \qcGen sz ->
-  m kp kf [] qcGen sz
+  m kp kf Seq.empty qcGen sz
   where
-    kp :: a -> [Text] -> QCGen -> Int -> PartialGen a
+    kp :: a -> Seq Text -> QCGen -> Int -> PartialGen a
     kp x _ _ _ = pure x
 
     kf ::
-      BiGen ([Text] -> QCGen -> Int -> PartialGen a) ->
-      [Text] ->
+      BiGen (Seq Text -> QCGen -> Int -> PartialGen a) ->
+      Seq Text ->
       QCGen ->
       Int ->
       PartialGen a
@@ -119,10 +132,10 @@ evalToPartial (AntiGen (F m)) = MkGen $ \qcGen sz ->
               , dpAnnotation = path
               , dpContinuation = \v -> cont v path qcGenCont sz
               }
-    kf (Annotate ann (AntiGen (F inner)) cont) path qcGen sz =
+    kf (Annotate ann (AntiGen (F inner)) cont) path qcGen sz = do
       let (qcGenInner, qcGenCont) = splitGen qcGen
-          innerPartial = inner kp kf (path <> [ann]) qcGenInner sz
-       in innerPartial >>= \t -> cont t path qcGenCont sz
+      t <- inner kp kf (path :|> ann) qcGenInner sz
+      cont t path qcGenCont sz
 
 countDecisionPoints :: PartialGen a -> Int
 countDecisionPoints (PartialGen (F m)) = m (const 0) $ \dp@DecisionPoint {..} ->
@@ -182,14 +195,14 @@ zapAt cutoffDepth (PartialGen (F m)) = MkGen $ \qcGen sz ->
                         , dpContinuation = \v -> zrValue (dpContinuation v (-1))
                         , ..
                         }
-            , zrAnnotation = maybe [] (: []) (NE.nonEmpty dpAnnotation)
+            , zrAnnotation = toList (NE.nonEmpty (toList dpAnnotation))
             , zrZapped = 1
             }
         _ ->
           -- Preserve tree structure
           let n' = case dpAlternativeGen of
-                Just _ | n > 0 -> pred n
-                _ -> n
+                Just _ -> pred n
+                Nothing -> n
               restResult = dpContinuation dpValue n'
            in ZapResult
                 { zrValue =
