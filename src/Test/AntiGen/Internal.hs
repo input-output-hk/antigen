@@ -162,7 +162,7 @@ evalToPartial (AntiGen (F m)) = MkGen $ \qcGen sz ->
       cont t path rw qcGenCont sz
     kf (Reweigh g (AntiGen (F inner)) cont) path rw qcGen sz = do
       let (qcGenInner, qcGenCont) = splitGen qcGen
-      t <- inner kp kf path (g . rw) qcGenInner sz
+      t <- inner kp kf path (rw . g) qcGenInner sz
       cont t path rw qcGenCont sz
 
 countDecisionPoints :: PartialGen a -> Int
