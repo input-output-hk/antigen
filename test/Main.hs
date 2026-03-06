@@ -24,6 +24,7 @@ import Test.AntiGen (
   faultyBool,
   faultyNum,
   faultyTry,
+  replicateMNorm,
   runAntiGen,
   zapAntiGen,
   (|!),
@@ -324,6 +325,24 @@ utilsSpec =
       chooseBoundedIntegralTest @Word64
       chooseBoundedIntegralTest @Word32
       chooseBoundedIntegralTest @Int
+    describe "replicateMNorm" $ do
+      prop "behaves like replicateM when not zapped" $ \(n :: Int) -> do
+        let n' = abs n `mod` 10
+        let gen = antiPositive @Int
+        fromNorm <- runAntiGen $ replicateMNorm n' gen
+        fromReplicateM <- runAntiGen $ replicateM n' gen
+        pure $
+          counterexample ("replicateMNorm: " <> show fromNorm) $
+            counterexample ("replicateM: " <> show fromReplicateM) $
+              length fromNorm === length fromReplicateM
+      prop "produces correct length" $ \(n :: Int) -> do
+        let n' = abs n `mod` 20
+        result <- runAntiGen $ replicateMNorm n' (antiPositive @Int)
+        pure $ length result === n'
+      prop "all elements satisfy the generator property when not zapped" $ do
+        let n = 10
+        result <- runAntiGen $ replicateMNorm n (antiPositive @Int)
+        pure $ all (> 0) result
 
 withAnnotationSpec :: Spec
 withAnnotationSpec =
