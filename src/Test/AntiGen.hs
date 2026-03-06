@@ -20,6 +20,11 @@ module Test.AntiGen (
   zapAntiGen,
   zapAntiGenResult,
   prettyZapResult,
+  scaleWeight,
+  reweigh,
+
+  -- * Normalized monad combinators
+  replicateMNorm,
 
   -- * AntiGen combinators
   faultyNum,
@@ -39,18 +44,20 @@ module Test.AntiGen (
   antiDistinctPair,
 ) where
 
-import Control.Monad (join)
+import Control.Monad (join, replicateM)
 import System.Random (Random)
 import Test.AntiGen.Internal (
   AntiGen,
   ZapResult (..),
-  (#!),
-  (|!),
   prettyZapResult,
+  reweigh,
   runAntiGen,
+  scaleWeight,
   withAnnotation,
   zapAntiGen,
   zapAntiGenResult,
+  (#!),
+  (|!),
  )
 import Test.QuickCheck (
   Arbitrary (..),
@@ -184,5 +191,13 @@ antiDistinctPair =
 -- | Create an `AntiGen` from a positive and a negative `AntiGen` generator
 (||!) :: AntiGen a -> AntiGen a -> AntiGen a
 a ||! b = join $ pure a |! pure b
+
+-- | Like 'replicateM', but normalizes the weight of each element by @1\/n@.
+--
+-- The total weight of the list becomes the average weight of its elements,
+-- rather than the sum. This prevents longer lists from having a
+-- disproportionately higher chance of being zapped.
+replicateMNorm :: Int -> AntiGen a -> AntiGen [a]
+replicateMNorm n = replicateM n . scaleWeight (/ fromIntegral n)
 
 infixl 6 ||!
