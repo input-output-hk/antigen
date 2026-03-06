@@ -9,6 +9,7 @@
 * Add `zapAntiGenResult` to get full zap metadata
 * Add `prettyZapResult` for displaying zap results
 * Add weighted decision points with `scaleWeight` and `reweigh`
+* Breaking: Change `zapAt` in `Test.AntiGen.Internal` from depth/index-based `Int` to weight-based `Float` argument
 * Add `replicateMNorm` for normalized list generation
 * Remove `tryZapAntiGen` (use `zapAntiGenResult` instead)
 
