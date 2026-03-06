@@ -24,6 +24,8 @@ module Test.AntiGen.Internal (
   countDecisionPoints,
   zapAt,
   withAnnotation,
+  scaleWeight,
+  reweigh,
 ) where
 
 import Control.Monad ((<=<))
@@ -51,31 +53,34 @@ splitGen = split
 #endif
 
 data BiGen next where
-  BiGen :: Gen t -> Maybe (Gen t) -> (t -> next) -> BiGen next
+  BiGen :: Gen t -> Maybe (Gen t) -> Float -> (t -> next) -> BiGen next
   Annotate :: Text -> AntiGen t -> (t -> next) -> BiGen next
+  Reweigh :: (Float -> Float) -> AntiGen t -> (t -> next) -> BiGen next
 
 instance Functor BiGen where
-  fmap f (BiGen p n c) = BiGen p n $ f . c
+  fmap f (BiGen p n w c) = BiGen p n w $ f . c
   fmap f (Annotate ann inner c) = Annotate ann inner $ f . c
+  fmap f (Reweigh g inner c) = Reweigh g inner $ f . c
 
 newtype AntiGen a = AntiGen (F BiGen a)
   deriving (Functor, Applicative, Monad, MonadFree BiGen)
 
 mapGen :: (forall x. Gen x -> Gen x) -> AntiGen a -> AntiGen a
 mapGen f (AntiGen (F m)) = m pure $ \case
-  BiGen pos neg c -> wrap $ BiGen (f pos) (f <$> neg) c
+  BiGen pos neg w c -> wrap $ BiGen (f pos) (f <$> neg) w c
   Annotate ann inner c -> wrap $ Annotate ann (mapGen f inner) c
+  Reweigh g inner c -> wrap $ Reweigh g (mapGen f inner) c
 
 instance MonadGen AntiGen where
-  liftGen g = AntiGen $ F $ \p b -> b $ BiGen g Nothing p
+  liftGen g = AntiGen $ F $ \p b -> b $ BiGen g Nothing 1 p
   variant n = mapGen (variant n)
-  sized f = wrap $ BiGen (f <$> getSize) Nothing id
+  sized f = wrap $ BiGen (f <$> getSize) Nothing 1 id
   resize n m = mapGen (resize n) m
   choose = liftGen . choose
 
 mkAntiGen :: Gen a -> Gen a -> AntiGen a
 mkAntiGen active alt =
-  AntiGen $ F $ \p b -> b $ BiGen (p <$> active) (Just $ p <$> alt) id
+  AntiGen $ F $ \p b -> b $ BiGen (p <$> active) (Just $ p <$> alt) 1 id
 
 -- | Create a negatable generator by providing a positive and a negative
 -- generator
@@ -99,18 +104,25 @@ infixl 5 #!
 withAnnotation :: Text -> AntiGen a -> AntiGen a
 withAnnotation ann inner = wrap $ Annotate ann inner pure
 
+scaleWeight :: (Float -> Float) -> AntiGen a -> AntiGen a
+scaleWeight rw inner = wrap $ Reweigh rw inner pure
+
+reweigh :: Float -> AntiGen a -> AntiGen a
+reweigh w = scaleWeight $ const w
+
 data DecisionPoint next where
   DecisionPoint ::
     { dpValue :: t
     , dpActiveGen :: Gen t
     , dpAlternativeGen :: Maybe (Gen t)
     , dpAnnotation :: Seq Text
+    , dpWeight :: Float
     , dpContinuation :: t -> next
     } ->
     DecisionPoint next
 
 instance Functor DecisionPoint where
-  fmap f (DecisionPoint v p n a c) = DecisionPoint v p n a $ f . c
+  fmap f (DecisionPoint v p n a w c) = DecisionPoint v p n a w $ f . c
 
 continue :: DecisionPoint next -> next
 continue DecisionPoint {..} = dpContinuation dpValue
@@ -120,18 +132,19 @@ newtype PartialGen a = PartialGen (F DecisionPoint a)
 
 evalToPartial :: AntiGen a -> Gen (PartialGen a)
 evalToPartial (AntiGen (F m)) = MkGen $ \qcGen sz ->
-  m kp kf Seq.empty qcGen sz
+  m kp kf Seq.empty id qcGen sz
   where
-    kp :: a -> Seq Text -> QCGen -> Int -> PartialGen a
-    kp x _ _ _ = pure x
+    kp :: a -> Seq Text -> (Float -> Float) -> QCGen -> Int -> PartialGen a
+    kp x _ _ _ _ = pure x
 
     kf ::
-      BiGen (Seq Text -> QCGen -> Int -> PartialGen a) ->
+      BiGen (Seq Text -> (Float -> Float) -> QCGen -> Int -> PartialGen a) ->
       Seq Text ->
+      (Float -> Float) ->
       QCGen ->
       Int ->
       PartialGen a
-    kf (BiGen activeGen altGen cont) path qcGen sz =
+    kf (BiGen activeGen altGen w cont) path rw qcGen sz =
       let (qcGenValue, qcGenCont) = splitGen qcGen
           value = unGen activeGen qcGenValue sz
        in wrap $
@@ -140,17 +153,28 @@ evalToPartial (AntiGen (F m)) = MkGen $ \qcGen sz ->
               , dpActiveGen = activeGen
               , dpAlternativeGen = altGen
               , dpAnnotation = path
-              , dpContinuation = \v -> cont v path qcGenCont sz
+              , dpWeight = rw w
+              , dpContinuation = \v -> cont v path rw qcGenCont sz
               }
-    kf (Annotate ann (AntiGen (F inner)) cont) path qcGen sz = do
+    kf (Annotate ann (AntiGen (F inner)) cont) path rw qcGen sz = do
       let (qcGenInner, qcGenCont) = splitGen qcGen
-      t <- inner kp kf (path :|> ann) qcGenInner sz
-      cont t path qcGenCont sz
+      t <- inner kp kf (path :|> ann) rw qcGenInner sz
+      cont t path rw qcGenCont sz
+    kf (Reweigh g (AntiGen (F inner)) cont) path rw qcGen sz = do
+      let (qcGenInner, qcGenCont) = splitGen qcGen
+      t <- inner kp kf path (g . rw) qcGenInner sz
+      cont t path rw qcGenCont sz
 
 countDecisionPoints :: PartialGen a -> Int
 countDecisionPoints (PartialGen (F m)) = m (const 0) $ \dp@DecisionPoint {..} ->
   case dpAlternativeGen of
     Just _ -> succ $ continue dp
+    Nothing -> continue dp
+
+totalWeight :: PartialGen a -> Float
+totalWeight (PartialGen (F m)) = m (const 0) $ \dp@DecisionPoint {..} ->
+  case dpAlternativeGen of
+    Just _ -> continue dp + dpWeight
     Nothing -> continue dp
 
 data ZapResult a = ZapResult
@@ -177,24 +201,24 @@ prettyZapResult ZapResult {..} =
     prettyPath :: NonEmpty Text -> Text
     prettyPath path = "  - " <> T.intercalate "." (NE.toList path)
 
-zapAt :: Int -> PartialGen a -> Gen (ZapResult (PartialGen a))
-zapAt cutoffDepth (PartialGen (F m)) = MkGen $ \qcGen sz ->
-  m kp (kf qcGen sz) cutoffDepth
+zapAt :: Float -> PartialGen a -> Gen (ZapResult (PartialGen a))
+zapAt cutoffWeight (PartialGen (F m)) = MkGen $ \qcGen sz ->
+  m kp (kf qcGen sz) $ Just cutoffWeight
   where
-    kp :: a -> Int -> ZapResult (PartialGen a)
+    kp :: a -> Maybe Float -> ZapResult (PartialGen a)
     kp x _ = ZapResult (pure x) mempty 0
 
     kf ::
       QCGen ->
       Int ->
-      DecisionPoint (Int -> ZapResult (PartialGen a)) ->
-      Int ->
+      DecisionPoint (Maybe Float -> ZapResult (PartialGen a)) ->
+      Maybe Float ->
       ZapResult (PartialGen a)
-    kf qcGen sz DecisionPoint {..} n =
+    kf qcGen sz DecisionPoint {..} mn =
       case dpAlternativeGen of
         Just altGen
-          | n == 0 ->
-              -- Zap here, then go negative
+          | Just n <- mn
+          , n <= dpWeight ->
               ZapResult
                 { zrValue =
                     let newValue = unGen altGen qcGen sz
@@ -203,7 +227,7 @@ zapAt cutoffDepth (PartialGen (F m)) = MkGen $ \qcGen sz ->
                             { dpValue = newValue
                             , dpActiveGen = altGen
                             , dpAlternativeGen = Nothing
-                            , dpContinuation = \v -> zrValue (dpContinuation v (-1))
+                            , dpContinuation = \v -> zrValue (dpContinuation v Nothing)
                             , ..
                             }
                 , zrAnnotation = toList (NE.nonEmpty (toList dpAnnotation))
@@ -212,8 +236,8 @@ zapAt cutoffDepth (PartialGen (F m)) = MkGen $ \qcGen sz ->
         _ ->
           -- Preserve tree structure
           let n' = case dpAlternativeGen of
-                Just _ -> pred n
-                Nothing -> n
+                Just _ -> (\x -> x - dpWeight) <$> mn
+                Nothing -> mn
               restResult = dpContinuation dpValue n'
            in ZapResult
                 { zrValue =
@@ -228,10 +252,10 @@ zapAt cutoffDepth (PartialGen (F m)) = MkGen $ \qcGen sz ->
 
 zap :: PartialGen a -> Gen (ZapResult (PartialGen a))
 zap p =
-  let n = countDecisionPoints p
-   in if n == 0
+  let w = totalWeight p
+   in if w == 0
         then pure $ ZapResult p [] 0
-        else (`zapAt` p) =<< choose (0, n - 1)
+        else (`zapAt` p) =<< choose (0, w)
 
 zapNTimes :: Int -> PartialGen a -> Gen (ZapResult a)
 zapNTimes n x

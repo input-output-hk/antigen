@@ -7,7 +7,15 @@ module Main (main) where
 import Control.DeepSeq (deepseq)
 import Criterion.Main (Benchmarkable, bench, bgroup, defaultMain, nfIO)
 import qualified Data.Text as T
-import Test.AntiGen.Internal (AntiGen, ZapResult (..), evalPartial, evalToPartial, withAnnotation, zapAt, (|!))
+import Test.AntiGen.Internal (
+  AntiGen,
+  ZapResult (..),
+  evalPartial,
+  evalToPartial,
+  withAnnotation,
+  zapAt,
+  (|!),
+ )
 import Test.QuickCheck (Arbitrary (..), generate)
 import Test.QuickCheck.GenT (MonadGen (..))
 
@@ -40,13 +48,13 @@ bindListAnnotated n
 bindListZapValue :: Int -> Int -> Benchmarkable
 bindListZapValue len i =
   nfIO . generate . variant (12345 :: Int) . fmap (evalPartial . zrValue) $
-    zapAt i =<< evalToPartial (bindList len)
+    zapAt (fromIntegral i) =<< evalToPartial (bindList len)
 
 -- Force value, annotation, and zapped count
 bindListZapAll :: Int -> Int -> Benchmarkable
 bindListZapAll len i =
   nfIO . generate . variant (12345 :: Int) . fmap forceAll $
-    zapAt i =<< evalToPartial (bindList len)
+    zapAt (fromIntegral i) =<< evalToPartial (bindList len)
   where
     forceAll ZapResult {..} =
       zrAnnotation `deepseq` (evalPartial zrValue, zrZapped)
@@ -55,12 +63,12 @@ bindListZapAll len i =
 annotatedZapValue :: Int -> Int -> Benchmarkable
 annotatedZapValue len i =
   nfIO . generate . variant (12345 :: Int) . fmap (evalPartial . zrValue) $
-    zapAt i =<< evalToPartial (bindListAnnotated len)
+    zapAt (fromIntegral i) =<< evalToPartial (bindListAnnotated len)
 
 annotatedZapAll :: Int -> Int -> Benchmarkable
 annotatedZapAll len i =
   nfIO . generate . variant (12345 :: Int) . fmap forceAll $
-    zapAt i =<< evalToPartial (bindListAnnotated len)
+    zapAt (fromIntegral i) =<< evalToPartial (bindListAnnotated len)
   where
     forceAll ZapResult {..} =
       zrAnnotation `deepseq` (evalPartial zrValue, zrZapped)
