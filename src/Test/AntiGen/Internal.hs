@@ -218,7 +218,7 @@ zapAt cutoffWeight (PartialGen (F m)) = MkGen $ \qcGen sz ->
       case dpAlternativeGen of
         Just altGen
           | Just n <- mn
-          , n <= dpWeight ->
+          , n < dpWeight ->
               ZapResult
                 { zrValue =
                     let newValue = unGen altGen qcGen sz
