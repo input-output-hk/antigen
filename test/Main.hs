@@ -8,11 +8,12 @@ module Main (main) where
 
 import Control.Monad (replicateM)
 import Data.Data (Proxy (..))
-import Paths_antigen (getDataDir)
-import System.FilePath ((</>))
 import Data.List (sort)
 import Data.List.NonEmpty (NonEmpty (..))
+import qualified Data.Text as T
 import Data.Word (Word32, Word64, Word8)
+import Paths_antigen (getDataDir)
+import System.FilePath ((</>))
 import Test.AntiGen (
   AntiGen,
   antiChoose,
@@ -38,7 +39,6 @@ import Test.AntiGen.Internal (
   withAnnotation,
   zapAntiGenResult,
  )
-import qualified Data.Text as T
 import Test.Hspec (Spec, describe, hspec, it, shouldBe, shouldSatisfy)
 import Test.Hspec.Golden (Golden (..))
 import Test.Hspec.QuickCheck (prop)
@@ -109,8 +109,11 @@ annotatedPositive =
 
 annotatedTuple :: AntiGen (Int, Int)
 annotatedTuple = do
-  x <- withAnnotation "first positive" $ (getPositive @Int <$> arbitrary) |! (getNonPositive <$> arbitrary)
-  y <- withAnnotation "second positive" $ (getPositive @Int <$> arbitrary) |! (getNonPositive <$> arbitrary)
+  x <-
+    withAnnotation "first positive" $ (getPositive @Int <$> arbitrary) |! (getNonPositive <$> arbitrary)
+  y <-
+    withAnnotation "second positive" $
+      (getPositive @Int <$> arbitrary) |! (getNonPositive <$> arbitrary)
   pure (x, y)
 
 complexAnnotations :: AntiGen (Int, Int)
@@ -326,21 +329,19 @@ utilsSpec =
       chooseBoundedIntegralTest @Word32
       chooseBoundedIntegralTest @Int
     describe "replicateMNorm" $ do
-      prop "behaves like replicateM when not zapped" $ \(n :: Int) -> do
-        let n' = abs n `mod` 10
+      prop "behaves like replicateM when not zapped" . forAll (choose (0, 1000)) $ \n -> do
         let gen = antiPositive @Int
-        fromNorm <- runAntiGen $ replicateMNorm n' gen
-        fromReplicateM <- runAntiGen $ replicateM n' gen
+        fromNorm <- runAntiGen $ replicateMNorm n gen
+        fromReplicateM <- runAntiGen $ replicateM n gen
         pure $
           counterexample ("replicateMNorm: " <> show fromNorm) $
             counterexample ("replicateM: " <> show fromReplicateM) $
               length fromNorm === length fromReplicateM
-      prop "produces correct length" $ \(n :: Int) -> do
-        let n' = abs n `mod` 20
-        result <- runAntiGen $ replicateMNorm n' (antiPositive @Int)
-        pure $ length result === n'
+      prop "produces correct length" . forAll (choose (0, 1000)) $ \n -> do
+        result <- runAntiGen $ replicateMNorm n (antiPositive @Int)
+        pure $ length result === n
       prop "all elements satisfy the generator property when not zapped" $ do
-        let n = 10
+        n <- choose (0, 1000)
         result <- runAntiGen $ replicateMNorm n (antiPositive @Int)
         pure $ all (> 0) result
 
@@ -460,16 +461,24 @@ prettyZapResultSpec =
   describe "prettyZapResult" $ do
     it "no zaps" $
       golden "no_zaps" $
-        T.unpack $ prettyZapResult $ ZapResult () [] 0
+        T.unpack $
+          prettyZapResult $
+            ZapResult () [] 0
     it "single zap without annotation" $
       golden "single_zap_no_annotation" $
-        T.unpack $ prettyZapResult $ ZapResult () [] 1
+        T.unpack $
+          prettyZapResult $
+            ZapResult () [] 1
     it "single zap with simple annotation" $
       golden "single_zap_simple" $
-        T.unpack $ prettyZapResult $ ZapResult () ["positive" :| []] 1
+        T.unpack $
+          prettyZapResult $
+            ZapResult () ["positive" :| []] 1
     it "single zap with nested annotation" $
       golden "single_zap_nested" $
-        T.unpack $ prettyZapResult $ ZapResult () ["root" :| ["child", "leaf"]] 1
+        T.unpack $
+          prettyZapResult $
+            ZapResult () ["root" :| ["child", "leaf"]] 1
     it "multiple zaps with annotations" $
       golden "multiple_zaps" $
         T.unpack $
@@ -483,7 +492,9 @@ prettyZapResultSpec =
               3
     it "zaps with mixed annotated and unannotated" $
       golden "mixed_annotations" $
-        T.unpack $ prettyZapResult $ ZapResult () ["annotated" :| []] 3
+        T.unpack $
+          prettyZapResult $
+            ZapResult () ["annotated" :| []] 3
 
 main :: IO ()
 main = hspec $ do
