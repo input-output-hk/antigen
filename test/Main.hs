@@ -36,6 +36,7 @@ import Test.AntiGen.Internal (
   countDecisionPoints,
   evalToPartial,
   prettyZapResult,
+  reweigh,
   withAnnotation,
   zapAntiGenResult,
  )
@@ -344,6 +345,16 @@ utilsSpec =
         n <- choose (0, 1000)
         result <- runAntiGen $ replicateMNorm n (antiPositive @Int)
         pure $ all (> 0) result
+    describe "reweigh" $ do
+      prop "zero weight generator is never zapped" $ do
+        let gen = do
+              x <- reweigh 0 $ pure "A" |! pure "a"
+              y <- pure "B" |! pure "b"
+              pure (x, y)
+        (x, y) <- zapAntiGen 1 gen
+        pure $
+          counterexample ("x = " <> x <> ", y = " <> y) $
+            x === "A" .&&. y === "b"
 
 withAnnotationSpec :: Spec
 withAnnotationSpec =
