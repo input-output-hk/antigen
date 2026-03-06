@@ -8,6 +8,8 @@
 * Add `ZapResult` with annotation tracking
 * Add `zapAntiGenResult` to get full zap metadata
 * Add `prettyZapResult` for displaying zap results
+* Add weighted decision points with `scaleWeight` and `reweigh`
+* Add `replicateMNorm` for normalized list generation
 * Remove `tryZapAntiGen` (use `zapAntiGenResult` instead)
 
 ## 0.3.1.0
