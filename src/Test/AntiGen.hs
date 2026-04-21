@@ -25,6 +25,7 @@ module Test.AntiGen (
 
   -- * Normalized monad combinators
   replicateMNorm,
+  traverseNorm,
 
   -- * AntiGen combinators
   faultyNum,
@@ -188,11 +189,15 @@ antiDistinctPair =
            return (x, x)
        )
 
+-- | Like `traverse`, but normalizes the weights of the elements
+traverseNorm :: (a -> AntiGen a) -> [a] -> AntiGen [a]
+traverseNorm f l = scaleWeight (/ fromIntegral (length l)) $ traverse f l
+
 -- | Create an `AntiGen` from a positive and a negative `AntiGen` generator
 (||!) :: AntiGen a -> AntiGen a -> AntiGen a
 a ||! b = join $ pure a |! pure b
 
--- | Like 'replicateM', but normalizes the weight of each element by @1\/n@.
+-- | Like 'replicateM', but normalizes the weights of the elements
 --
 -- The total weight of the list becomes the average weight of its elements,
 -- rather than the sum. This prevents longer lists from having a
