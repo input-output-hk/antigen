@@ -8,6 +8,7 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE ViewPatterns #-}
 
 module Test.AntiGen (
   AntiGen,
@@ -43,9 +44,11 @@ module Test.AntiGen (
   antiNonEmpty,
   antiSamePair,
   antiDistinctPair,
+  antiSort,
 ) where
 
 import Control.Monad (join, replicateM)
+import Data.List (sort)
 import System.Random (Random)
 import Test.AntiGen.Internal (
   AntiGen,
@@ -188,6 +191,36 @@ antiDistinctPair =
            x <- arbitrary
            return (x, x)
        )
+
+-- | Returns the sorted list.
+--
+-- Negative: Swaps two distinct elements to break sort order.
+-- If all elements are equal, there is no negative case.
+antiSort :: Ord a => [a] -> AntiGen [a]
+antiSort (sort -> sorted)
+  | allEqual sorted = pure sorted
+  | otherwise =
+      let
+        -- pick two nonequal elements and swap their places, making the list no
+        -- longer sorted
+        permute ys = do
+          i <- choose (0, length ys - 1)
+          let
+            vi = ys !! i
+            others = [(k, v) | (k, v) <- zip [0 ..] ys, v /= vi]
+          j <- choose (0, length others - 1)
+          let
+            (j', vj) = others !! j
+            swap k v
+              | k == i = vj
+              | k == j' = vi
+              | otherwise = v
+          pure $ zipWith swap [0 :: Int ..] ys
+       in
+        pure sorted |! permute sorted
+  where
+    allEqual [] = True
+    allEqual (y : ys) = all (== y) ys
 
 -- | Like `traverse`, but normalizes the weights of the elements
 traverseNorm :: (a -> AntiGen a) -> [a] -> AntiGen [a]
