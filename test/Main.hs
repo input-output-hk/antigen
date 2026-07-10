@@ -8,6 +8,7 @@ module Main (main) where
 
 import Control.Monad (replicateM)
 import Data.Data (Proxy (..))
+import Data.Function (on)
 import Data.List (sort)
 import Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.Text as T
@@ -22,11 +23,16 @@ import Test.AntiGen (
   antiNonNegative,
   antiNonPositive,
   antiPositive,
+  antiSort,
+  antiVectorOfUnique,
+  antiVectorOfUniqueBy,
+  antiVectorOfUniqueOn,
   faultyBool,
   faultyNum,
   faultyTry,
   replicateMNorm,
   runAntiGen,
+  traverseNorm,
   zapAntiGen,
   (|!),
   (||!),
@@ -49,10 +55,13 @@ import Test.QuickCheck (
   Gen,
   NonNegative (..),
   NonPositive (..),
+  NonZero (..),
   Positive (..),
   Property,
   Testable (..),
+  checkCoverage,
   counterexample,
+  cover,
   forAll,
   forAllBlind,
   getSize,
@@ -166,6 +175,13 @@ annotationThenDecision = do
   a <- withAnnotation "annotated" antiPositive
   b <- antiPositive -- should have empty annotation
   pure (a, b)
+
+isSorted :: Ord a => [a] -> Bool
+isSorted xs = and $ zipWith (<=) xs (drop 1 xs)
+
+pairwiseDistinctBy :: (a -> a -> Bool) -> [a] -> Bool
+pairwiseDistinctBy _ [] = True
+pairwiseDistinctBy eq (x : xs) = not (any (eq x) xs) && pairwiseDistinctBy eq xs
 
 noneOf :: [Bool] -> Property
 noneOf [] = property True
@@ -345,6 +361,98 @@ utilsSpec =
         n <- choose (0, 1000)
         result <- runAntiGen $ replicateMNorm n (antiPositive @Int)
         pure $ all (> 0) result
+    describe "antiSort" $ do
+      prop "positive: returns the sorted input" $ \(xs :: [Int]) -> do
+        res <- runAntiGen $ antiSort xs
+        pure $ res === sort xs
+      prop "negative: returns an unsorted permutation of the input" $
+        \(x :: Int) (NonZero d) (rest :: [Int]) -> do
+          let xs = x : x + d : rest
+          res <- zapAntiGen 1 $ antiSort xs
+          pure $
+            counterexample ("result: " <> show res) $
+              counterexample "not a permutation" (sort res === sort xs)
+                .&&. counterexample "still sorted" (not $ isSorted res)
+      prop "all-equal list has no negative case" $ \(x :: Int) -> do
+        n <- choose (0, 20)
+        res <- zapAntiGen 1 $ antiSort (replicate n x)
+        pure $ res === replicate n x
+    describe "traverseNorm" $ do
+      prop "positive: behaves like traverse" $ \(xs :: [Int]) -> do
+        res <- runAntiGen $ traverseNorm faultyNum xs
+        pure $ res === xs
+      prop "negative: zapping once changes exactly one element" $
+        \(x :: Int) (rest :: [Int]) -> do
+          let xs = x : rest
+          res <- zapAntiGen 1 $ traverseNorm faultyNum xs
+          pure $
+            counterexample ("result: " <> show res) $
+              length res === length xs
+                .&&. length (filter id (zipWith (/=) xs res)) === 1
+      prop "empty list has no decision points" $ do
+        res <- zapAntiGen 1 $ traverseNorm faultyNum ([] :: [Int])
+        pure $ res === []
+      prop "total weight is the average of the element weights" . checkCoverage $ do
+        (xs, y) <- zapAntiGen 1 $ do
+          xs <- traverseNorm faultyNum (replicate 50 (0 :: Int))
+          y <- faultyNum (0 :: Int)
+          pure (xs, y)
+        pure $
+          cover 30 (y /= 0) "single generator zapped" $
+            cover 30 (any (/= 0) xs) "list element zapped" True
+    describe "antiVectorOfUnique" $ do
+      prop "positive: generates n pairwise distinct elements" $ do
+        n <- choose (0, 20)
+        res <- runAntiGen $ antiVectorOfUnique n (liftGen $ choose (0, 1000 :: Int))
+        pure $
+          counterexample ("result: " <> show res) $
+            length res === n
+              .&&. counterexample "has duplicates" (pairwiseDistinctBy (==) res)
+      prop "positive: retries until distinct when the domain barely fits" $ do
+        res <- runAntiGen $ antiVectorOfUnique 3 (liftGen $ choose (0, 2 :: Int))
+        pure $ sort res === [0, 1, 2]
+      prop "negative: contains a duplicate" $ do
+        n <- choose (2, 20)
+        res <- zapAntiGen 1 $ antiVectorOfUnique n (liftGen $ choose (0, 1000000 :: Int))
+        pure $
+          counterexample ("result: " <> show res) $
+            length res === n
+              .&&. counterexample "no duplicates" (not $ pairwiseDistinctBy (==) res)
+      prop "n <= 1 has no negative case" $ do
+        n <- choose (0, 1)
+        res <- zapAntiGen 1 $ antiVectorOfUnique n (liftGen $ choose (0, 100 :: Int))
+        pure $ length res === n
+      prop "zapping targets either uniqueness or a single element" $ do
+        n <- choose (2, 10)
+        res <- zapAntiGen 1 $ antiVectorOfUnique n (antiPositive @Int)
+        pure $
+          counterexample ("result: " <> show res) $
+            exactlyOne
+              [ ("duplicate introduced", not $ pairwiseDistinctBy (==) res)
+              , ("one element non-positive", length (filter (<= 0) res) == 1)
+              ]
+    describe "antiVectorOfUniqueOn" $ do
+      prop "positive: keys are pairwise distinct" $ do
+        n <- choose (0, 10)
+        res <- runAntiGen $ antiVectorOfUniqueOn (`div` 100) n (liftGen $ choose (0, 100000 :: Int))
+        pure $
+          counterexample ("result: " <> show res) $
+            pairwiseDistinctBy ((==) `on` (`div` 100)) res
+      prop "negative: contains elements with equal keys" $ do
+        n <- choose (2, 10)
+        res <- zapAntiGen 1 $ antiVectorOfUniqueOn (`div` 100) n (liftGen $ choose (0, 1000000 :: Int))
+        pure $
+          counterexample ("result: " <> show res) $
+            not $
+              pairwiseDistinctBy ((==) `on` (`div` 100)) res
+    describe "antiVectorOfUniqueBy" $ do
+      prop "positive: respects a custom equivalence" $ do
+        n <- choose (0, 10)
+        let eq a b = abs a == abs b
+        res <- runAntiGen $ antiVectorOfUniqueBy eq n (liftGen $ choose (-1000, 1000 :: Int))
+        pure $
+          counterexample ("result: " <> show res) $
+            pairwiseDistinctBy eq res
     describe "reweigh" $ do
       prop "zero weight generator is never zapped" $ do
         let gen = do

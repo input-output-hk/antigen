@@ -8,6 +8,7 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE ViewPatterns #-}
 
 module Test.AntiGen (
   AntiGen,
@@ -25,6 +26,7 @@ module Test.AntiGen (
 
   -- * Normalized monad combinators
   replicateMNorm,
+  traverseNorm,
 
   -- * AntiGen combinators
   faultyNum,
@@ -42,9 +44,15 @@ module Test.AntiGen (
   antiNonEmpty,
   antiSamePair,
   antiDistinctPair,
+  antiSort,
+  antiVectorOfUnique,
+  antiVectorOfUniqueBy,
+  antiVectorOfUniqueOn,
 ) where
 
 import Control.Monad (join, replicateM)
+import Data.Function (on)
+import Data.List (sort)
 import System.Random (Random)
 import Test.AntiGen.Internal (
   AntiGen,
@@ -66,8 +74,9 @@ import Test.QuickCheck (
   NonPositive (..),
   NonZero (..),
   Positive (..),
+  discard,
  )
-import Test.QuickCheck.GenT (MonadGen (..), listOf1, oneof, suchThat)
+import Test.QuickCheck.GenT (MonadGen (..), listOf1, oneof, suchThat, vectorOf)
 
 -- | Returns the provided number.
 --
@@ -188,11 +197,86 @@ antiDistinctPair =
            return (x, x)
        )
 
+-- | Returns the sorted list.
+--
+-- Negative: Swaps two distinct elements to break sort order.
+-- If all elements are equal, there is no negative case.
+antiSort :: Ord a => [a] -> AntiGen [a]
+antiSort (sort -> sorted)
+  | allEqual sorted = pure sorted
+  | otherwise =
+      let
+        -- pick two nonequal elements and swap their places, making the list no
+        -- longer sorted
+        permute ys = do
+          i <- choose (0, length ys - 1)
+          let
+            vi = ys !! i
+            others = [(k, v) | (k, v) <- zip [0 ..] ys, v /= vi]
+          j <- choose (0, length others - 1)
+          let
+            (j', vj) = others !! j
+            swap k v
+              | k == i = vj
+              | k == j' = vi
+              | otherwise = v
+          pure $ zipWith swap [0 :: Int ..] ys
+       in
+        pure sorted |! permute sorted
+  where
+    allEqual [] = True
+    allEqual (y : ys) = all (== y) ys
+
+-- | Generate a list of @n@ pairwise-distinct elements. Discards the example if
+-- the underlying generator could not produce enough distinct elements within
+-- the per-element retry budget.
+--
+-- Negative: one element is overwritten with a copy of another, so the list
+-- contains a duplicate pair
+antiVectorOfUnique :: Eq a => Int -> AntiGen a -> AntiGen [a]
+antiVectorOfUnique = antiVectorOfUniqueBy (==)
+
+-- | Like 'antiVectorOfUnique', but compares elements by a key projection.
+antiVectorOfUniqueOn :: Eq b => (a -> b) -> Int -> AntiGen a -> AntiGen [a]
+antiVectorOfUniqueOn key = antiVectorOfUniqueBy ((==) `on` key)
+
+-- | Like 'antiVectorOfUnique', but takes a user-supplied equivalence relation.
+-- The relation must be reflexive, otherwise the negative case is not
+-- guaranteed to contain a duplicate.
+antiVectorOfUniqueBy :: (a -> a -> Bool) -> Int -> AntiGen a -> AntiGen [a]
+antiVectorOfUniqueBy eq n gen
+  | n <= 1 = vectorOf n gen
+  | otherwise = do
+      disallowDuplicates <- faultyBool True
+      let
+        triesPerElement = 10 :: Int
+        go _ 0 _ = discard
+        go m tries elems
+          | m > 0 = do
+              x <- gen
+              if any (eq x) elems
+                then go m (tries - 1) elems
+                else go (m - 1) triesPerElement (x : elems)
+          | otherwise = pure elems
+      xs <- go n triesPerElement []
+      if disallowDuplicates
+        then pure xs
+        else do
+          -- copy the element at src over a distinct position dst
+          src <- choose (0, n - 1)
+          offset <- choose (1, n - 1)
+          let dst = (src + offset) `mod` n
+          pure [if k == dst then xs !! src else x | (k, x) <- zip [0 :: Int ..] xs]
+
+-- | Like `traverse`, but normalizes the weights of the elements
+traverseNorm :: (a -> AntiGen a) -> [a] -> AntiGen [a]
+traverseNorm f l = scaleWeight (/ fromIntegral (length l)) $ traverse f l
+
 -- | Create an `AntiGen` from a positive and a negative `AntiGen` generator
 (||!) :: AntiGen a -> AntiGen a -> AntiGen a
 a ||! b = join $ pure a |! pure b
 
--- | Like 'replicateM', but normalizes the weight of each element by @1\/n@.
+-- | Like 'replicateM', but normalizes the weights of the elements
 --
 -- The total weight of the list becomes the average weight of its elements,
 -- rather than the sum. This prevents longer lists from having a
